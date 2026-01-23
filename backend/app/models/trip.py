@@ -1,7 +1,7 @@
 import enum
 import secrets
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, Date, Enum, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, DateTime, Date, Enum, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -58,6 +58,9 @@ class Trip(Base):
 
 class TripParticipant(Base):
     __tablename__ = "trip_participants"
+    __table_args__ = (
+        UniqueConstraint('trip_id', 'user_id', name='unique_trip_user'),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     trip_id = Column(Integer, ForeignKey("trips.id", ondelete="CASCADE"), nullable=False)

@@ -1,11 +1,15 @@
 'use client'
 
 import { useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useAuth } from '@/contexts/AuthContext'
+import { getErrorMessage } from '@/lib/errors'
 
 export default function LoginPage() {
   const { login } = useAuth()
+  const searchParams = useSearchParams()
+  const redirect = searchParams.get('redirect')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -17,9 +21,9 @@ export default function LoginPage() {
     setIsLoading(true)
 
     try {
-      await login({ email, password })
+      await login({ email, password }, redirect || undefined)
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Ошибка входа. Проверьте данные.')
+      setError(getErrorMessage(err, 'Ошибка входа. Проверьте данные.'))
     } finally {
       setIsLoading(false)
     }
@@ -86,7 +90,10 @@ export default function LoginPage() {
 
           <p className="mt-6 text-center text-sm text-gray-500">
             Нет аккаунта?{' '}
-            <Link href="/register" className="text-primary-600 hover:text-primary-700 font-medium">
+            <Link 
+              href={redirect ? `/register?redirect=${encodeURIComponent(redirect)}` : '/register'} 
+              className="text-primary-600 hover:text-primary-700 font-medium"
+            >
               Зарегистрироваться
             </Link>
           </p>

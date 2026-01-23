@@ -9,8 +9,8 @@ interface AuthContextType {
   user: User | null
   isLoading: boolean
   isAuthenticated: boolean
-  login: (credentials: LoginCredentials) => Promise<void>
-  register: (data: RegisterData) => Promise<void>
+  login: (credentials: LoginCredentials, redirectTo?: string) => Promise<void>
+  register: (data: RegisterData, redirectTo?: string) => Promise<void>
   logout: () => void
   refreshUser: () => Promise<void>
 }
@@ -48,18 +48,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem('refresh_token', tokens.refresh_token)
   }
 
-  const login = async (credentials: LoginCredentials) => {
+  const login = async (credentials: LoginCredentials, redirectTo?: string) => {
     const response = await api.post<TokenResponse>('/api/auth/login', credentials)
     saveTokens(response.data)
     await fetchUser()
-    router.push('/trips')
+    router.push(redirectTo || '/trips')
   }
 
-  const register = async (data: RegisterData) => {
+  const register = async (data: RegisterData, redirectTo?: string) => {
     const response = await api.post<TokenResponse>('/api/auth/register', data)
     saveTokens(response.data)
     await fetchUser()
-    router.push('/trips')
+    router.push(redirectTo || '/trips')
   }
 
   const logout = () => {

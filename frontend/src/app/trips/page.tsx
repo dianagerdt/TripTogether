@@ -1,11 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/AuthContext'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { getTrips, createTrip, joinTrip } from '@/lib/trips'
 import { TripListItem, CreateTripData } from '@/types'
+import { useToast } from '@/components/ui/Toast'
 import Link from 'next/link'
 
 function CreateTripModal({ 
@@ -22,10 +23,20 @@ function CreateTripModal({
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [error, setError] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+  const { showToast } = useToast()
+
+  // Autofocus on open
+  useEffect(() => {
+    if (isOpen && inputRef.current) {
+      setTimeout(() => inputRef.current?.focus(), 100)
+    }
+  }, [isOpen])
 
   const mutation = useMutation({
     mutationFn: createTrip,
     onSuccess: () => {
+      showToast('Поездка создана! 🎉', 'success')
       onSuccess()
       onClose()
       setTitle('')
@@ -52,8 +63,8 @@ function CreateTripModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl max-w-md w-full p-6">
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <h2 className="text-xl font-bold mb-4">Новая поездка</h2>
         
         {error && (
@@ -68,6 +79,7 @@ function CreateTripModal({
               Название *
             </label>
             <input
+              ref={inputRef}
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -149,10 +161,20 @@ function JoinTripModal({
 }) {
   const [inviteCode, setInviteCode] = useState('')
   const [error, setError] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+  const { showToast } = useToast()
+
+  // Autofocus on open
+  useEffect(() => {
+    if (isOpen && inputRef.current) {
+      setTimeout(() => inputRef.current?.focus(), 100)
+    }
+  }, [isOpen])
 
   const mutation = useMutation({
     mutationFn: joinTrip,
     onSuccess: () => {
+      showToast('Вы присоединились к поездке! 🎒', 'success')
       onSuccess()
       onClose()
       setInviteCode('')
@@ -171,8 +193,8 @@ function JoinTripModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl max-w-md w-full p-6">
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <h2 className="text-xl font-bold mb-4">Присоединиться к поездке</h2>
         
         {error && (
@@ -187,6 +209,7 @@ function JoinTripModal({
               Код приглашения
             </label>
             <input
+              ref={inputRef}
               type="text"
               value={inviteCode}
               onChange={(e) => setInviteCode(e.target.value)}
@@ -218,6 +241,23 @@ function JoinTripModal({
   )
 }
 
+function getDaysUntilTrip(startDateStr: string): { text: string; color: string } | null {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const startDate = new Date(startDateStr)
+  startDate.setHours(0, 0, 0, 0)
+  
+  const diffTime = startDate.getTime() - today.getTime()
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+  
+  if (diffDays < 0) return { text: 'Завершена', color: 'text-gray-400' }
+  if (diffDays === 0) return { text: '🎉 Сегодня!', color: 'text-green-600' }
+  if (diffDays === 1) return { text: '⏰ Завтра!', color: 'text-orange-600' }
+  if (diffDays <= 7) return { text: `🔥 Через ${diffDays} дн.`, color: 'text-orange-500' }
+  if (diffDays <= 30) return { text: `${diffDays} дн.`, color: 'text-primary-600' }
+  return null // Don't show for trips more than 30 days away
+}
+
 function TripCard({ trip }: { trip: TripListItem }) {
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('ru-RU', {
@@ -226,16 +266,25 @@ function TripCard({ trip }: { trip: TripListItem }) {
     })
   }
 
+  const daysInfo = getDaysUntilTrip(trip.start_date)
+
   return (
     <Link href={`/trips/${trip.id}`}>
-      <div className="card hover:shadow-md transition-shadow cursor-pointer">
+      <div className="card-hover cursor-pointer stagger-item">
         <div className="flex justify-between items-start mb-2">
           <h3 className="font-semibold text-lg text-gray-900">{trip.title}</h3>
-          {trip.is_organizer && (
-            <span className="text-xs bg-primary-100 text-primary-700 px-2 py-1 rounded-full">
-              Организатор
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            {daysInfo && (
+              <span className={`text-xs font-medium ${daysInfo.color}`}>
+                {daysInfo.text}
+              </span>
+            )}
+            {trip.is_organizer && (
+              <span className="text-xs bg-primary-100 text-primary-700 px-2 py-1 rounded-full">
+                Организатор
+              </span>
+            )}
+          </div>
         </div>
         
         {trip.description && (
