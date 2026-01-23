@@ -7,6 +7,7 @@ import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { getTrips, createTrip, joinTrip } from '@/lib/trips'
 import { TripListItem, CreateTripData } from '@/types'
 import { useToast } from '@/components/ui/Toast'
+import { EmptyState, TripsListSkeleton } from '@/components/ui'
 import Link from 'next/link'
 
 function CreateTripModal({ 
@@ -360,12 +361,7 @@ function TripsContent() {
           </div>
         </div>
 
-        {isLoading && (
-          <div className="text-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
-            <p className="mt-4 text-gray-500">Загрузка...</p>
-          </div>
-        )}
+        {isLoading && <TripsListSkeleton />}
 
         {error && (
           <div className="card text-center py-12">
@@ -374,21 +370,19 @@ function TripsContent() {
         )}
 
         {trips && trips.length === 0 && (
-          <div className="card text-center py-12">
-            <div className="text-6xl mb-4">🗺️</div>
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">
-              Пока нет поездок
-            </h3>
-            <p className="text-gray-500 mb-6 max-w-md mx-auto">
-              Создайте свою первую поездку и пригласите друзей для совместного планирования маршрута.
-            </p>
-            <button 
-              onClick={() => setShowCreateModal(true)}
-              className="btn-primary"
-            >
-              Создать первую поездку
-            </button>
-          </div>
+          <EmptyState
+            icon="🗺️"
+            title="Пока нет поездок"
+            description="Создайте свою первую поездку и пригласите друзей для совместного планирования маршрута."
+            action={{
+              label: "Создать первую поездку",
+              onClick: () => setShowCreateModal(true)
+            }}
+            secondaryAction={{
+              label: "Присоединиться по коду",
+              onClick: () => setShowJoinModal(true)
+            }}
+          />
         )}
 
         {trips && trips.length > 0 && (

@@ -6,11 +6,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/AuthContext'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { getTrip, deleteTrip, leaveTrip } from '@/lib/trips'
-import { getPreferences, createPreference, deletePreference, PLACE_TYPE_LABELS, PLACE_TYPES } from '@/lib/preferences'
+import { getPreferences, createPreference, deletePreference, PLACE_TYPE_LABELS, PLACE_TYPES, getTripReactions, addReaction, removeReaction, AVAILABLE_EMOJIS, PreferenceReactions, ReactionData } from '@/lib/preferences'
 import { getRoutes, generateRoutes } from '@/lib/routes'
 import api from '@/lib/api'
 import { Trip, Participant, Preference, PlaceType, CreatePreferenceData, RouteOption } from '@/types'
 import { useToast } from '@/components/ui/Toast'
+import { EmptyState, TripDetailSkeleton, PreferencesListSkeleton, RoutesListSkeleton } from '@/components/ui'
+import { GenerationProgress } from '@/components/ui/GenerationProgress'
+import { WishCloud } from '@/components/ui/WishCloud'
 import Link from 'next/link'
 
 // Helper: What's next hints
@@ -137,8 +140,24 @@ function AddPreferenceModal({
   )
 }
 
-function PreferenceCard({ pref, tripId, isOwner, onDelete }: { pref: Preference; tripId: number; isOwner: boolean; onDelete: () => void }) {
+function PreferenceCard({ 
+  pref, 
+  tripId, 
+  isOwner, 
+  onDelete,
+  reactions,
+  onReact
+}: { 
+  pref: Preference
+  tripId: number
+  isOwner: boolean
+  onDelete: () => void
+  reactions?: ReactionData[]
+  onReact: (emoji: string) => void
+}) {
   const { showToast } = useToast()
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+  
   const deleteMutation = useMutation({ 
     mutationFn: () => deletePreference(tripId, pref.id), 
     onSuccess: () => {
@@ -146,6 +165,9 @@ function PreferenceCard({ pref, tripId, isOwner, onDelete }: { pref: Preference;
       onDelete()
     }
   })
+  
+  const userReaction = reactions?.find(r => r.user_reacted)
+  
   return (
     <div className="card stagger-item">
       <div className="flex justify-between items-start mb-2">
@@ -167,7 +189,57 @@ function PreferenceCard({ pref, tripId, isOwner, onDelete }: { pref: Preference;
         </div>
       </div>
       {pref.comment && <p className="text-sm text-gray-500 mb-2 italic">"{pref.comment}"</p>}
-      <div className="text-xs text-gray-400">от {pref.username}</div>
+      <div className="flex items-center justify-between">
+        <div className="text-xs text-gray-400">от {pref.username}</div>
+        
+        {/* Reactions */}
+        <div className="flex items-center gap-1">
+          {reactions && reactions.length > 0 && (
+            <div className="flex items-center gap-1 mr-2">
+              {reactions.map((r) => (
+                <button 
+                  key={r.emoji}
+                  onClick={() => onReact(r.user_reacted ? '' : r.emoji)}
+                  className={`text-sm px-2 py-0.5 rounded-full transition-all ${r.user_reacted ? 'bg-primary-100 scale-110' : 'bg-gray-100 hover:bg-gray-200'}`}
+                  title={r.users.join(', ')}
+                >
+                  {r.emoji} {r.count}
+                </button>
+              ))}
+            </div>
+          )}
+          
+          {/* Add reaction button */}
+          <div className="relative">
+            <button 
+              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+              className={`text-lg px-2 py-0.5 rounded-full transition-all ${userReaction ? 'bg-primary-50' : 'hover:bg-gray-100 opacity-50 hover:opacity-100'}`}
+            >
+              {userReaction ? userReaction.emoji : '😊'}
+            </button>
+            
+            {showEmojiPicker && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowEmojiPicker(false)} />
+                <div className="absolute bottom-full right-0 mb-2 p-2 bg-white rounded-xl shadow-lg border border-gray-100 z-50 animate-scale-in flex gap-1">
+                  {AVAILABLE_EMOJIS.map((emoji) => (
+                    <button
+                      key={emoji}
+                      onClick={() => {
+                        onReact(userReaction?.emoji === emoji ? '' : emoji)
+                        setShowEmojiPicker(false)
+                      }}
+                      className={`text-xl p-1 rounded hover:bg-gray-100 transition-all hover:scale-125 ${userReaction?.emoji === emoji ? 'bg-primary-100' : ''}`}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
@@ -205,6 +277,26 @@ function RouteCard({ route, tripId, isVoted, onVote, onRemoveVote }: { route: Ro
   )
 }
 
+// Group preferences by country and city
+function groupPreferences(preferences: Preference[]) {
+  const groups: Record<string, { country: string; city: string; items: Preference[] }> = {}
+  
+  preferences.forEach((p) => {
+    const key = `${p.country}|${p.city}`
+    if (!groups[key]) {
+      groups[key] = { country: p.country, city: p.city, items: [] }
+    }
+    groups[key].items.push(p)
+  })
+  
+  // Sort groups by total priority (highest first)
+  return Object.values(groups).sort((a, b) => {
+    const sumA = a.items.reduce((sum, p) => sum + p.priority, 0)
+    const sumB = b.items.reduce((sum, p) => sum + p.priority, 0)
+    return sumB - sumA
+  })
+}
+
 function TripDetailContent() {
   const params = useParams()
   const router = useRouter()
@@ -215,11 +307,17 @@ function TripDetailContent() {
   const [activeTab, setActiveTab] = useState<'preferences' | 'routes' | 'voting'>('preferences')
   const [showAddPref, setShowAddPref] = useState(false)
   const [showShareMenu, setShowShareMenu] = useState(false)
+  const [groupByCity, setGroupByCity] = useState(true)
 
   const { data: trip, isLoading } = useQuery({ queryKey: ['trip', tripId], queryFn: () => getTrip(tripId) })
   const { data: preferences } = useQuery({ queryKey: ['preferences', tripId], queryFn: () => getPreferences(tripId) })
   const { data: routes } = useQuery({ queryKey: ['routes', tripId], queryFn: () => getRoutes(tripId) })
   const { data: myVotes } = useQuery({ queryKey: ['myVotes', tripId], queryFn: () => api.get(`/api/trips/${tripId}/my-votes`).then(r => r.data.route_option_ids as number[]) })
+  const { data: reactions } = useQuery({ 
+    queryKey: ['reactions', tripId], 
+    queryFn: () => getTripReactions(tripId),
+    enabled: !!preferences?.length
+  })
 
   const deleteMutation = useMutation({ 
     mutationFn: () => deleteTrip(tripId), 
@@ -265,8 +363,25 @@ function TripDetailContent() {
       queryClient.invalidateQueries({ queryKey: ['routes', tripId] })
     }
   })
+  
+  const reactionMutation = useMutation({
+    mutationFn: ({ prefId, emoji }: { prefId: number; emoji: string }) => 
+      emoji ? addReaction(prefId, emoji) : removeReaction(prefId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['reactions', tripId] })
+    }
+  })
+  
+  // Helper to get reactions for a preference
+  const getReactionsForPref = (prefId: number) => {
+    return reactions?.find(r => r.preference_id === prefId)?.reactions || []
+  }
+  
+  const handleReaction = (prefId: number, emoji: string) => {
+    reactionMutation.mutate({ prefId, emoji })
+  }
 
-  if (isLoading || !trip) return <div className="min-h-screen flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div></div>
+  if (isLoading || !trip) return <TripDetailSkeleton />
 
   const isOrganizer = trip.created_by_id === user?.id
   const formatDate = (d: string) => new Date(d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -418,18 +533,57 @@ function TripDetailContent() {
             {activeTab === 'preferences' && (
               <div>
                 <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-lg font-semibold">Пожелания участников</h3>
+                  <div className="flex items-center gap-4">
+                    <h3 className="text-lg font-semibold">Пожелания участников</h3>
+                    {preferences && preferences.length > 2 && (
+                      <button 
+                        onClick={() => setGroupByCity(!groupByCity)}
+                        className={`text-xs px-3 py-1 rounded-full transition-colors ${groupByCity ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                      >
+                        {groupByCity ? '📍 По городам' : '📋 Списком'}
+                      </button>
+                    )}
+                  </div>
                   <button onClick={() => setShowAddPref(true)} className="btn-primary text-sm">+ Добавить</button>
                 </div>
-                {preferences && preferences.length === 0 ? (
-                  <div className="card text-center py-12">
-                    <div className="text-4xl mb-4">📍</div>
-                    <h3 className="text-lg font-semibold mb-2">Пока нет пожеланий</h3>
-                    <p className="text-gray-500 mb-6">Добавьте места, которые хотите посетить</p>
-                    <button onClick={() => setShowAddPref(true)} className="btn-primary">Добавить первое пожелание</button>
+                {/* Wish Cloud visualization */}
+                {preferences && preferences.length >= 3 && (
+                  <WishCloud preferences={preferences} />
+                )}
+                
+                {!preferences ? (
+                  <PreferencesListSkeleton />
+                ) : preferences.length === 0 ? (
+                  <EmptyState
+                    icon="📍"
+                    title="Пока нет пожеланий"
+                    description="Добавьте места, которые хотите посетить в этой поездке"
+                    action={{
+                      label: "Добавить первое пожелание",
+                      onClick: () => setShowAddPref(true)
+                    }}
+                  />
+                ) : groupByCity ? (
+                  <div className="space-y-6">
+                    {groupPreferences(preferences).map((group) => (
+                      <div key={`${group.country}-${group.city}`} className="animate-fade-in-up">
+                        <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-100">
+                          <span className="text-lg">🌍</span>
+                          <h4 className="font-semibold text-gray-900">{group.city}, {group.country}</h4>
+                          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
+                            {group.items.length} {group.items.length === 1 ? 'место' : group.items.length >= 2 && group.items.length <= 4 ? 'места' : 'мест'}
+                          </span>
+                        </div>
+                        <div className="space-y-3 pl-2 border-l-2 border-primary-100">
+                          {group.items.map((p) => (
+                            <PreferenceCard key={p.id} pref={p} tripId={tripId} isOwner={p.user_id === user?.id} onDelete={handleRefresh} reactions={getReactionsForPref(p.id)} onReact={(emoji) => handleReaction(p.id, emoji)} />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 ) : (
-                  <div className="space-y-4">{preferences?.map((p) => <PreferenceCard key={p.id} pref={p} tripId={tripId} isOwner={p.user_id === user?.id} onDelete={handleRefresh} />)}</div>
+                  <div className="space-y-4">{preferences.map((p) => <PreferenceCard key={p.id} pref={p} tripId={tripId} isOwner={p.user_id === user?.id} onDelete={handleRefresh} reactions={getReactionsForPref(p.id)} onReact={(emoji) => handleReaction(p.id, emoji)} />)}</div>
                 )}
               </div>
             )}
@@ -447,12 +601,21 @@ function TripDetailContent() {
                   </button>
                 </div>
                 {generateMutation.isError && <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-lg text-sm">{(generateMutation.error as any)?.response?.data?.detail || 'Ошибка генерации'}</div>}
-                {routes && routes.length === 0 ? (
-                  <div className="card text-center py-12">
-                    <div className="text-4xl mb-4">🗺️</div>
-                    <h3 className="text-lg font-semibold mb-2">Маршруты ещё не созданы</h3>
-                    <p className="text-gray-500 mb-6">{preferences?.length ? 'Сгенерируйте AI-маршруты на основе пожеланий' : 'Сначала добавьте пожелания'}</p>
-                  </div>
+                
+                <GenerationProgress isGenerating={generateMutation.isPending || trip.generation_status === 'in_progress'} />
+                
+                {!routes ? (
+                  <RoutesListSkeleton />
+                ) : routes.length === 0 ? (
+                  <EmptyState
+                    icon="🤖"
+                    title="Маршруты ещё не созданы"
+                    description={preferences?.length ? 'AI сгенерирует оптимальные маршруты на основе всех пожеланий' : 'Сначала добавьте пожелания участников'}
+                    action={preferences?.length ? {
+                      label: "🤖 Сгенерировать маршруты",
+                      onClick: () => generateMutation.mutate()
+                    } : undefined}
+                  />
                 ) : (
                   <div className="space-y-4">
                     {routes?.map((r) => (
@@ -490,11 +653,15 @@ function TripDetailContent() {
                     </div>
                   </div>
                 ) : (
-                  <div className="card text-center py-12">
-                    <div className="text-4xl mb-4">🗳️</div>
-                    <h3 className="text-lg font-semibold mb-2">Сначала сгенерируйте маршруты</h3>
-                    <p className="text-gray-500">Голосование начнётся после генерации маршрутов</p>
-                  </div>
+                  <EmptyState
+                    icon="🗳️"
+                    title="Сначала сгенерируйте маршруты"
+                    description="Голосование начнётся после того, как AI создаст варианты маршрутов"
+                    action={preferences?.length ? {
+                      label: "Перейти к маршрутам",
+                      onClick: () => setActiveTab('routes')
+                    } : undefined}
+                  />
                 )}
               </div>
             )}
@@ -504,16 +671,52 @@ function TripDetailContent() {
             <h3 className="text-lg font-semibold mb-4">Участники</h3>
             <div className="card">
               <div className="space-y-3">
-                {trip.participants?.map((p: Participant) => (
-                  <div key={p.id} className="flex items-center justify-between stagger-item">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-primary-100 text-primary-600 flex items-center justify-center font-medium">{p.username[0].toUpperCase()}</div>
-                      <span className="font-medium">{p.username}</span>
+                {trip.participants?.map((p: Participant) => {
+                  const prefCount = preferences?.filter(pref => pref.user_id === p.user_id).length || 0
+                  const hasActivity = prefCount > 0
+                  
+                  return (
+                    <div key={p.id} className="flex items-center justify-between stagger-item">
+                      <div className="flex items-center gap-3">
+                        <div className="relative">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center font-medium transition-all ${hasActivity ? 'bg-primary-100 text-primary-600' : 'bg-gray-100 text-gray-400'}`}>
+                            {p.username[0].toUpperCase()}
+                          </div>
+                          {/* Activity indicator dot */}
+                          {hasActivity && (
+                            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 rounded-full border-2 border-white" title="Добавил пожелания" />
+                          )}
+                        </div>
+                        <div>
+                          <span className="font-medium">{p.username}</span>
+                          {prefCount > 0 && (
+                            <div className="text-xs text-gray-400">
+                              📍 {prefCount} {prefCount === 1 ? 'пожелание' : prefCount >= 2 && prefCount <= 4 ? 'пожелания' : 'пожеланий'}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {p.role === 'organizer' && <span className="text-xs bg-primary-100 text-primary-700 px-2 py-1 rounded-full">Организатор</span>}
                     </div>
-                    {p.role === 'organizer' && <span className="text-xs bg-primary-100 text-primary-700 px-2 py-1 rounded-full">Организатор</span>}
-                  </div>
-                ))}
+                  )
+                })}
               </div>
+              
+              {/* Activity summary */}
+              {preferences && preferences.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-500">Всего пожеланий:</span>
+                    <span className="font-semibold text-primary-600">{preferences.length}</span>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between text-sm">
+                    <span className="text-gray-500">Активных участников:</span>
+                    <span className="font-semibold text-green-600">
+                      {new Set(preferences.map(p => p.user_id)).size} / {trip.participants?.length || 0}
+                    </span>
+                  </div>
+                </div>
+              )}
               
               {/* Invite reminder */}
               {(trip.participants?.length || 0) <= 2 && (

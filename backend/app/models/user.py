@@ -22,6 +22,7 @@ class User(Base):
     trip_participations = relationship("TripParticipant", back_populates="user")
     preferences = relationship("PlacePreference", back_populates="user")
     votes = relationship("Vote", back_populates="user")
+    reactions = relationship("Reaction", back_populates="user")
 
     def __repr__(self):
         return f"<User(id={self.id}, email={self.email}, username={self.username})>"

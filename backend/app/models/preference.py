@@ -36,6 +36,7 @@ class PlacePreference(Base):
     # Relationships
     trip = relationship("Trip", back_populates="preferences")
     user = relationship("User", back_populates="preferences")
+    reactions = relationship("Reaction", back_populates="preference", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<PlacePreference(id={self.id}, country={self.country}, city={self.city})>"
