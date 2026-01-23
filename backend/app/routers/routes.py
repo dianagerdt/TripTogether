@@ -16,7 +16,7 @@ router = APIRouter()
 def get_trip_or_404(trip_id: int, db: Session) -> Trip:
     trip = db.query(Trip).filter(Trip.id == trip_id).first()
     if not trip:
-        raise HTTPException(status_code=404, detail="Trip not found")
+        raise HTTPException(status_code=404, detail="Поездка не найдена")
     return trip
 
 
@@ -26,7 +26,7 @@ def check_user_is_participant(trip_id: int, user_id: int, db: Session) -> TripPa
         TripParticipant.user_id == user_id
     ).first()
     if not participant:
-        raise HTTPException(status_code=403, detail="You are not a participant of this trip")
+        raise HTTPException(status_code=403, detail="Вы не являетесь участником этой поездки")
     return participant
 
 
@@ -83,14 +83,14 @@ async def generate_trip_routes(
     if trip.generation_count >= settings.max_generation_count:
         raise HTTPException(
             status_code=400,
-            detail=f"Maximum {settings.max_generation_count} generations allowed per trip"
+            detail=f"Максимум {settings.max_generation_count} генераций на поездку"
         )
     
     # Check if generation is already in progress
     if trip.generation_status == GenerationStatus.IN_PROGRESS:
         raise HTTPException(
             status_code=400,
-            detail="Route generation is already in progress"
+            detail="Генерация маршрутов уже выполняется"
         )
     
     # Get preferences with user data
@@ -103,7 +103,7 @@ async def generate_trip_routes(
     if not preferences:
         raise HTTPException(
             status_code=400,
-            detail="At least 1 preference is required to generate routes"
+            detail="Добавьте хотя бы одно пожелание для генерации маршрутов"
         )
     
     # Update trip status
@@ -141,7 +141,7 @@ async def generate_trip_routes(
         
         return GenerateRoutesResponse(
             status="success",
-            message=f"Generated {len(new_routes)} route options",
+            message=f"Сгенерировано {len(new_routes)} вариантов маршрута",
             routes=[
                 RouteOptionResponse(
                     id=r.id,
@@ -162,5 +162,5 @@ async def generate_trip_routes(
         db.commit()
         raise HTTPException(
             status_code=500,
-            detail=f"Route generation failed: {str(e)}"
+            detail=f"Ошибка генерации маршрутов: {str(e)}"
         )

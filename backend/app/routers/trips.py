@@ -23,7 +23,7 @@ def get_trip_or_404(trip_id: int, db: Session) -> Trip:
     """Get trip by ID or raise 404."""
     trip = db.query(Trip).filter(Trip.id == trip_id).first()
     if not trip:
-        raise HTTPException(status_code=404, detail="Trip not found")
+        raise HTTPException(status_code=404, detail="Поездка не найдена")
     return trip
 
 
@@ -35,7 +35,7 @@ def check_user_is_participant(trip: Trip, user: User, db: Session) -> TripPartic
     ).first()
     
     if not participant:
-        raise HTTPException(status_code=403, detail="You are not a participant of this trip")
+        raise HTTPException(status_code=403, detail="Вы не являетесь участником этой поездки")
     
     return participant
 
@@ -44,7 +44,7 @@ def check_user_is_organizer(trip: Trip, user: User, db: Session):
     """Check if user is the organizer of the trip."""
     participant = check_user_is_participant(trip, user, db)
     if participant.role != ParticipantRole.ORGANIZER:
-        raise HTTPException(status_code=403, detail="Only the organizer can perform this action")
+        raise HTTPException(status_code=403, detail="Только организатор может выполнить это действие")
 
 
 @router.post("", response_model=TripResponse, status_code=status.HTTP_201_CREATED)
@@ -132,7 +132,7 @@ def get_trip(
     ).filter(Trip.id == trip_id).first()
     
     if not trip:
-        raise HTTPException(status_code=404, detail="Trip not found")
+        raise HTTPException(status_code=404, detail="Поездка не найдена")
     
     check_user_is_participant(trip, current_user, db)
     
@@ -208,7 +208,7 @@ def join_trip(
     trip = db.query(Trip).filter(Trip.invite_code == request.invite_code).first()
     
     if not trip:
-        raise HTTPException(status_code=404, detail="Invalid invite code")
+        raise HTTPException(status_code=404, detail="Недействительный код приглашения")
     
     # Check if already a participant
     existing = db.query(TripParticipant).filter(
@@ -217,7 +217,7 @@ def join_trip(
     ).first()
     
     if existing:
-        raise HTTPException(status_code=400, detail="You are already a participant")
+        raise HTTPException(status_code=400, detail="Вы уже являетесь участником этой поездки")
     
     # Check participant limit
     participant_count = db.query(TripParticipant).filter(
@@ -225,7 +225,7 @@ def join_trip(
     ).count()
     
     if participant_count >= settings.max_participants_per_trip:
-        raise HTTPException(status_code=400, detail="Trip has reached maximum participants")
+        raise HTTPException(status_code=400, detail="Достигнуто максимальное количество участников")
     
     # Add as participant
     participant = TripParticipant(
@@ -253,7 +253,7 @@ def leave_trip(
     if participant.role == ParticipantRole.ORGANIZER:
         raise HTTPException(
             status_code=400, 
-            detail="Organizer cannot leave the trip. Delete the trip instead."
+            detail="Организатор не может покинуть поездку. Удалите поездку."
         )
     
     db.delete(participant)

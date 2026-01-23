@@ -39,7 +39,7 @@ class VotingResultsResponse(BaseModel):
 def get_trip_or_404(trip_id: int, db: Session) -> Trip:
     trip = db.query(Trip).filter(Trip.id == trip_id).first()
     if not trip:
-        raise HTTPException(status_code=404, detail="Trip not found")
+        raise HTTPException(status_code=404, detail="Поездка не найдена")
     return trip
 
 
@@ -49,7 +49,7 @@ def check_user_is_participant(trip_id: int, user_id: int, db: Session):
         TripParticipant.user_id == user_id
     ).first()
     if not participant:
-        raise HTTPException(status_code=403, detail="You are not a participant of this trip")
+        raise HTTPException(status_code=403, detail="Вы не являетесь участником этой поездки")
     return participant
 
 
@@ -66,7 +66,7 @@ def vote_for_route(
     
     # Check if routes exist
     if trip.generation_status != GenerationStatus.COMPLETED:
-        raise HTTPException(status_code=400, detail="Routes have not been generated yet")
+        raise HTTPException(status_code=400, detail="Маршруты ещё не сгенерированы")
     
     # Verify route belongs to this trip
     route = db.query(RouteOption).filter(
@@ -75,7 +75,7 @@ def vote_for_route(
     ).first()
     
     if not route:
-        raise HTTPException(status_code=404, detail="Route option not found")
+        raise HTTPException(status_code=404, detail="Вариант маршрута не найден")
     
     # Check if already voted for this option
     existing = db.query(Vote).filter(
@@ -84,7 +84,7 @@ def vote_for_route(
     ).first()
     
     if existing:
-        raise HTTPException(status_code=400, detail="You already voted for this option")
+        raise HTTPException(status_code=400, detail="Вы уже голосовали за этот вариант")
     
     # Create vote
     vote = Vote(
@@ -120,7 +120,7 @@ def remove_vote(
     ).first()
     
     if not vote:
-        raise HTTPException(status_code=404, detail="Vote not found")
+        raise HTTPException(status_code=404, detail="Голос не найден")
     
     db.delete(vote)
     db.commit()

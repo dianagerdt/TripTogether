@@ -18,7 +18,7 @@ router = APIRouter()
 def get_trip_or_404(trip_id: int, db: Session) -> Trip:
     trip = db.query(Trip).filter(Trip.id == trip_id).first()
     if not trip:
-        raise HTTPException(status_code=404, detail="Trip not found")
+        raise HTTPException(status_code=404, detail="Поездка не найдена")
     return trip
 
 
@@ -29,7 +29,7 @@ def check_user_is_participant(trip_id: int, user_id: int, db: Session):
     ).first()
     
     if not participant:
-        raise HTTPException(status_code=403, detail="You are not a participant of this trip")
+        raise HTTPException(status_code=403, detail="Вы не являетесь участником этой поездки")
 
 
 def check_duplicate_preference(
@@ -121,7 +121,7 @@ def create_preference(
     if pref_count >= settings.max_preferences_per_trip:
         raise HTTPException(
             status_code=400, 
-            detail=f"Maximum {settings.max_preferences_per_trip} preferences per trip"
+            detail=f"Максимум {settings.max_preferences_per_trip} пожеланий на поездку"
         )
     
     # Create preference
@@ -192,10 +192,10 @@ def update_preference(
     ).first()
     
     if not preference:
-        raise HTTPException(status_code=404, detail="Preference not found")
+        raise HTTPException(status_code=404, detail="Пожелание не найдено")
     
     if preference.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="You can only edit your own preferences")
+        raise HTTPException(status_code=403, detail="Вы можете редактировать только свои пожелания")
     
     update_data = pref_data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -235,10 +235,10 @@ def delete_preference(
     ).first()
     
     if not preference:
-        raise HTTPException(status_code=404, detail="Preference not found")
+        raise HTTPException(status_code=404, detail="Пожелание не найдено")
     
     if preference.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="You can only delete your own preferences")
+        raise HTTPException(status_code=403, detail="Вы можете удалять только свои пожелания")
     
     db.delete(preference)
     db.commit()

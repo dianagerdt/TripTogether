@@ -24,7 +24,7 @@ def get_current_user(
     if payload is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
+            detail="Недействительный или истёкший токен",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
@@ -32,7 +32,7 @@ def get_current_user(
     if payload.get("type") != "access":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token type",
+            detail="Неверный тип токена",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
@@ -42,14 +42,14 @@ def get_current_user(
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found",
+            detail="Пользователь не найден",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User is inactive",
+            detail="Аккаунт деактивирован",
             headers={"WWW-Authenticate": "Bearer"},
         )
     

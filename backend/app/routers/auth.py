@@ -31,7 +31,7 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
     if existing_email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
+            detail="Этот email уже зарегистрирован"
         )
     
     # Check if username already exists
@@ -39,7 +39,7 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
     if existing_username:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already taken"
+            detail="Это имя пользователя уже занято"
         )
     
     # Create new user
@@ -69,13 +69,13 @@ def login(credentials: UserLogin, db: Session = Depends(get_db)):
     if not user or not verify_password(credentials.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password"
+            detail="Неверный email или пароль"
         )
     
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User account is deactivated"
+            detail="Аккаунт деактивирован"
         )
     
     return create_tokens(user.id)
@@ -92,13 +92,13 @@ def refresh_token(request: RefreshTokenRequest, db: Session = Depends(get_db)):
     if payload is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired refresh token"
+            detail="Недействительный или истёкший токен"
         )
     
     if payload.get("type") != "refresh":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token type"
+            detail="Неверный тип токена"
         )
     
     user_id = int(payload.get("sub"))
@@ -107,7 +107,7 @@ def refresh_token(request: RefreshTokenRequest, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found or inactive"
+            detail="Пользователь не найден или неактивен"
         )
     
     return create_tokens(user.id)

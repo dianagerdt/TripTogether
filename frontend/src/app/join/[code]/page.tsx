@@ -24,9 +24,8 @@ export default function JoinByLinkPage() {
     },
     onError: (err: any) => {
       const detail = err.response?.data?.detail
-      if (detail === 'You are already a participant') {
+      if (detail === 'Вы уже являетесь участником этой поездки') {
         showToast('Вы уже участник этой поездки', 'info')
-        // Try to find the trip and redirect
         router.push('/trips')
       } else {
         showToast(detail || 'Ошибка присоединения', 'error')
