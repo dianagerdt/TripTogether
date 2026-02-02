@@ -83,9 +83,6 @@ export interface Preference {
   place_type: PlaceType
   priority: number
   comment: string | null
-  latitude: number | null
-  longitude: number | null
-  yandex_place_id: string | null
   created_at: string
 }
 
