@@ -13,9 +13,12 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 7
     
     # DeepSeek API (compatible with OpenAI API)
-    deepseek_api_key: str = "sk-4e85e818b1474aa785e051f70321fdc9"
+    deepseek_api_key: str = ""  # Set via DEEPSEEK_API_KEY environment variable
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-chat"
+    
+    # Yandex Maps API
+    yandex_api_key: str = ""  # Set via YANDEX_API_KEY environment variable
     
     # App
     app_env: str = "development"
