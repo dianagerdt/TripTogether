@@ -31,6 +31,9 @@ class PreferenceResponse(PreferenceBase):
     trip_id: int
     user_id: int
     username: str  # Added for display
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    yandex_place_id: Optional[str] = None
     created_at: datetime
 
     class Config:

@@ -23,6 +23,7 @@ openai==1.10.0
 
 # Utils
 python-dotenv==1.0.0
+requests==2.31.0
 
 # Development
 ruff==0.1.14

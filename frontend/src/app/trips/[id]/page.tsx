@@ -16,6 +16,7 @@ import { useToast } from '@/components/ui/Toast'
 import { EmptyState, TripDetailSkeleton, PreferencesListSkeleton, RoutesListSkeleton } from '@/components/ui'
 import { GenerationProgress } from '@/components/ui/GenerationProgress'
 import { WishCloud } from '@/components/ui/WishCloud'
+import YandexMap from '@/components/ui/YandexMap'
 import { getErrorMessage } from '@/lib/errors'
 import Link from 'next/link'
 import { Logo } from '@/components/Logo'
@@ -762,7 +763,7 @@ function TripDetailContent() {
   const queryClient = useQueryClient()
   const tripId = Number(params.id)
   const { showToast } = useToast()
-  const [activeTab, setActiveTab] = useState<'preferences' | 'routes' | 'voting'>('preferences')
+  const [activeTab, setActiveTab] = useState<'preferences' | 'routes' | 'voting' | 'map'>('preferences')
   const [showAddPref, setShowAddPref] = useState(false)
   const [showEditPref, setShowEditPref] = useState(false)
   const [editingPreference, setEditingPreference] = useState<Preference | null>(null)
@@ -1004,6 +1005,7 @@ function TripDetailContent() {
               { key: 'preferences', label: 'Пожелания', icon: '📍', count: preferences?.length },
               { key: 'routes', label: 'Маршруты', icon: '🗺️', count: routes?.length },
               { key: 'voting', label: 'Голосование', icon: '🗳️' },
+              { key: 'map', label: 'Карта', icon: '🗺️' },
             ].map((tab) => (
               <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={`py-4 border-b-2 font-medium text-sm transition-colors ${activeTab === tab.key ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
                 {tab.icon} {tab.label} {tab.count !== undefined && <span className="ml-2 bg-gray-100 px-2 py-0.5 rounded-full text-xs">{tab.count}</span>}
@@ -1381,6 +1383,29 @@ function TripDetailContent() {
                       onClick: () => setActiveTab('routes')
                     } : undefined}
                   />
+                )}
+              </div>
+            )}
+
+            {activeTab === 'map' && (
+              <div>
+                <div className="mb-4">
+                  <h3 className="text-lg font-semibold mb-2">Карта пожеланий</h3>
+                  <p className="text-sm text-gray-600">
+                    Все места из ваших пожеланий отображаются на карте. Цвет маркера соответствует приоритету.
+                  </p>
+                </div>
+                <YandexMap
+                  preferences={preferences || []}
+                  apiKey={process.env.NEXT_PUBLIC_YANDEX_API_KEY || ''}
+                  height="600px"
+                />
+                {preferences && preferences.filter(p => p.latitude && p.longitude).length === 0 && (
+                  <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <p className="text-sm text-yellow-800">
+                      💡 <strong>Совет:</strong> При добавлении новых пожеланий система автоматически определит их координаты и отобразит на карте.
+                    </p>
+                  </div>
                 )}
               </div>
             )}

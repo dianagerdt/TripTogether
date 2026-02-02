@@ -1,6 +1,6 @@
 import enum
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, Enum, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, DateTime, Enum, ForeignKey, Text, Numeric
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -25,6 +25,11 @@ class PlacePreference(Base):
     country = Column(String(100), nullable=False)
     city = Column(String(100), nullable=False)
     location = Column(String(255), nullable=True)  # Optional specific place
+    
+    # Coordinates from Yandex Maps
+    latitude = Column(Numeric(10, 8), nullable=True)
+    longitude = Column(Numeric(11, 8), nullable=True)
+    yandex_place_id = Column(String(255), nullable=True)  # Yandex Place ID for better accuracy
     
     place_type = Column(Enum(PlaceType), default=PlaceType.OTHER, nullable=False)
     priority = Column(Integer, default=3)  # 1-5, default middle

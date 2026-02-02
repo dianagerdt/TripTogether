@@ -14,6 +14,13 @@ from app.config import settings
 
 router = APIRouter()
 
+# Initialize geocoder only if API key is configured
+try:
+    from app.services.yandex_geocoder import YandexGeocoder
+    geocoder = YandexGeocoder() if settings.yandex_api_key else None
+except (ValueError, ImportError):
+    geocoder = None
+
 
 def get_trip_or_404(trip_id: int, db: Session) -> Trip:
     trip = db.query(Trip).filter(Trip.id == trip_id).first()
@@ -96,6 +103,9 @@ def get_preferences(
             place_type=p.place_type,
             priority=p.priority,
             comment=p.comment,
+            latitude=float(p.latitude) if p.latitude else None,
+            longitude=float(p.longitude) if p.longitude else None,
+            yandex_place_id=p.yandex_place_id,
             created_at=p.created_at,
         )
         for p in preferences
@@ -136,6 +146,22 @@ def create_preference(
         comment=pref_data.comment,
     )
     
+    # Try to geocode the address
+    if geocoder:
+        try:
+            geocode_result = geocoder.geocode_preference(
+                pref_data.country,
+                pref_data.city,
+                pref_data.location
+            )
+            if geocode_result:
+                preference.latitude = geocode_result["latitude"]
+                preference.longitude = geocode_result["longitude"]
+                preference.yandex_place_id = geocode_result.get("place_id")
+        except Exception as e:
+            # Не падаем, если геокодирование не удалось
+            print(f"Geocoding failed: {str(e)}")
+    
     db.add(preference)
     db.commit()
     db.refresh(preference)
@@ -151,6 +177,9 @@ def create_preference(
         place_type=preference.place_type,
         priority=preference.priority,
         comment=preference.comment,
+        latitude=float(preference.latitude) if preference.latitude else None,
+        longitude=float(preference.longitude) if preference.longitude else None,
+        yandex_place_id=preference.yandex_place_id,
         created_at=preference.created_at,
     )
 
@@ -198,8 +227,32 @@ def update_preference(
         raise HTTPException(status_code=403, detail="Вы можете редактировать только свои пожелания")
     
     update_data = pref_data.model_dump(exclude_unset=True)
+    
+    # Check if address fields changed - need to re-geocode
+    address_changed = any(field in update_data for field in ['country', 'city', 'location'])
+    
     for field, value in update_data.items():
         setattr(preference, field, value)
+    
+    # Re-geocode if address changed
+    if address_changed and geocoder:
+        try:
+            geocode_result = geocoder.geocode_preference(
+                preference.country,
+                preference.city,
+                preference.location
+            )
+            if geocode_result:
+                preference.latitude = geocode_result["latitude"]
+                preference.longitude = geocode_result["longitude"]
+                preference.yandex_place_id = geocode_result.get("place_id")
+            else:
+                # Clear coordinates if geocoding failed
+                preference.latitude = None
+                preference.longitude = None
+                preference.yandex_place_id = None
+        except Exception as e:
+            print(f"Geocoding failed during update: {str(e)}")
     
     db.commit()
     db.refresh(preference)
@@ -215,6 +268,72 @@ def update_preference(
         place_type=preference.place_type,
         priority=preference.priority,
         comment=preference.comment,
+        latitude=float(preference.latitude) if preference.latitude else None,
+        longitude=float(preference.longitude) if preference.longitude else None,
+        yandex_place_id=preference.yandex_place_id,
+        created_at=preference.created_at,
+    )
+
+
+@router.post("/{trip_id}/preferences/{pref_id}/geocode", response_model=PreferenceResponse)
+def geocode_preference(
+    trip_id: int,
+    pref_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Геокодировать пожелание (получить координаты)."""
+    get_trip_or_404(trip_id, db)
+    check_user_is_participant(trip_id, current_user.id, db)
+    
+    preference = db.query(PlacePreference).options(
+        joinedload(PlacePreference.user)
+    ).filter(
+        PlacePreference.id == pref_id,
+        PlacePreference.trip_id == trip_id
+    ).first()
+    
+    if not preference:
+        raise HTTPException(status_code=404, detail="Пожелание не найдено")
+    
+    if not geocoder:
+        raise HTTPException(status_code=503, detail="Геокодирование недоступно (не настроен API ключ)")
+    
+    # Geocode the address
+    try:
+        geocode_result = geocoder.geocode_preference(
+            preference.country,
+            preference.city,
+            preference.location
+        )
+        
+        if geocode_result:
+            preference.latitude = geocode_result["latitude"]
+            preference.longitude = geocode_result["longitude"]
+            preference.yandex_place_id = geocode_result.get("place_id")
+            db.commit()
+            db.refresh(preference)
+        else:
+            raise HTTPException(status_code=404, detail="Не удалось найти координаты для этого адреса")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка геокодирования: {str(e)}")
+    
+    return PreferenceResponse(
+        id=preference.id,
+        trip_id=preference.trip_id,
+        user_id=preference.user_id,
+        username=preference.user.username,
+        country=preference.country,
+        city=preference.city,
+        location=preference.location,
+        place_type=preference.place_type,
+        priority=preference.priority,
+        comment=preference.comment,
+        latitude=float(preference.latitude) if preference.latitude else None,
+        longitude=float(preference.longitude) if preference.longitude else None,
+        yandex_place_id=preference.yandex_place_id,
         created_at=preference.created_at,
     )
 

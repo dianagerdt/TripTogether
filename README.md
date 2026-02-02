@@ -18,11 +18,17 @@ git clone <repo-url>
 cd TripTogether
 ```
 
-2. **Создать .env файл (опционально)**
+2. **Создать .env файл с API ключами**
 ```bash
-# Переменные окружения можно задать в docker-compose.yml
-# или создать .env файл с DEEPSEEK_API_KEY
+# Скопируйте .env.example в .env
+cp .env.example .env
+
+# Отредактируйте .env и добавьте ваши API ключи:
+# - DEEPSEEK_API_KEY - получите на https://platform.deepseek.com/
+# - YANDEX_API_KEY - получите на https://developer.tech.yandex.ru/
 ```
+
+**ВАЖНО:** Без API ключей приложение не будет работать!
 
 3. **Запустить**
 ```bash
