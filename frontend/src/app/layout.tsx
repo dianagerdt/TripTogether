@@ -8,6 +8,10 @@ const inter = Inter({ subsets: ['latin', 'cyrillic'] })
 export const metadata: Metadata = {
   title: 'TripTogether - Планируйте путешествия вместе',
   description: 'Сервис для группового планирования путешествий с друзьями',
+  icons: {
+    icon: '/favicon.svg',
+    apple: '/favicon.svg',
+  },
 }
 
 export default function RootLayout({

@@ -1,10 +1,10 @@
-FROM node:20-alpine
+FROM node:20-slim
 
 WORKDIR /app
 
 # Install dependencies
 COPY package*.json ./
-RUN npm install --prefer-offline --no-audit --progress=false
+RUN npm install --no-audit --progress=false
 
 # Copy application code
 COPY . .

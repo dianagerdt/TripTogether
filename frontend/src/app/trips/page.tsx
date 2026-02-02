@@ -8,6 +8,7 @@ import { getTrips, createTrip, joinTrip } from '@/lib/trips'
 import { TripListItem, CreateTripData } from '@/types'
 import { useToast } from '@/components/ui/Toast'
 import { EmptyState, TripsListSkeleton } from '@/components/ui'
+import { Logo } from '@/components/Logo'
 import Link from 'next/link'
 
 function CreateTripModal({ 
@@ -324,7 +325,9 @@ function TripsContent() {
       <header className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <h1 className="text-xl font-bold text-primary-600">TripTogether</h1>
+            <Link href="/trips">
+              <Logo size="md" className="hover:opacity-80 transition-opacity" />
+            </Link>
             
             <div className="flex items-center gap-4">
               <span className="text-sm text-gray-600">

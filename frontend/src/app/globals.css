@@ -2,6 +2,65 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Markdown content styles */
+.markdown-content h1 {
+  @apply text-xl font-bold mt-4 mb-2;
+}
+
+.markdown-content h2 {
+  @apply text-lg font-semibold mt-4 mb-2;
+}
+
+.markdown-content h3 {
+  @apply text-base font-semibold mt-3 mb-2;
+}
+
+.markdown-content strong {
+  @apply font-semibold;
+}
+
+.markdown-content em {
+  @apply italic;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  @apply ml-6 mb-2;
+}
+
+.markdown-content li {
+  @apply mb-1;
+}
+
+.markdown-content p {
+  @apply mb-2;
+}
+
+.markdown-content code {
+  @apply bg-gray-100 px-1 py-0.5 rounded text-sm font-mono;
+}
+
+.markdown-content pre {
+  @apply bg-gray-100 p-3 rounded overflow-x-auto mb-2;
+}
+
+.markdown-content blockquote {
+  @apply border-l-4 border-gray-300 pl-4 italic my-2;
+}
+
+/* Custom scrollbar for route descriptions */
+.overflow-y-auto::-webkit-scrollbar {
+  width: 6px;
+}
+
+.overflow-y-auto::-webkit-scrollbar-track {
+  @apply bg-gray-100 rounded;
+}
+
+.overflow-y-auto::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 rounded hover:bg-gray-400;
+}
+
 :root {
   --foreground-rgb: 0, 0, 0;
   --background-start-rgb: 250, 250, 252;
@@ -88,6 +147,21 @@ body {
   to { transform: rotate(360deg); }
 }
 
+@keyframes progress-fill {
+  from { width: 0%; }
+}
+
+@keyframes winner-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.7); }
+  50% { box-shadow: 0 0 20px 5px rgba(251, 191, 36, 0.5); }
+}
+
+@keyframes vote-count-up {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
 .animate-slide-in {
   animation: slide-in 0.3s ease-out;
 }
@@ -127,6 +201,18 @@ body {
 
 .animate-spin-slow {
   animation: spin-slow 4s linear infinite;
+}
+
+.animate-progress-fill {
+  animation: progress-fill 0.8s ease-out forwards;
+}
+
+.animate-winner-glow {
+  animation: winner-glow 2s ease-in-out infinite;
+}
+
+.animate-vote-count-up {
+  animation: vote-count-up 0.4s ease-out;
 }
 
 /* Staggered animation for lists */

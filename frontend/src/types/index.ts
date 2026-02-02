@@ -45,6 +45,7 @@ export interface Trip {
   invite_code: string
   generation_status: GenerationStatus
   generation_count: number
+  max_generation_count: number
   created_by_id: number
   created_at: string
   participants?: Participant[]

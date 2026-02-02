@@ -1,0 +1,69 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Route/Path line - curved path -->
+  <path
+    d="M 10 40 Q 20 25, 32 30 T 54 40"
+    stroke="#4F46E5"
+    stroke-width="3"
+    stroke-linecap="round"
+    fill="none"
+    opacity="0.6"
+  />
+  
+  <!-- Main route line -->
+  <path
+    d="M 10 40 Q 20 25, 32 30 T 54 40"
+    stroke="#4F46E5"
+    stroke-width="2.5"
+    stroke-linecap="round"
+    fill="none"
+  />
+  
+  <!-- People icons along the route -->
+  <!-- Person 1 (left) -->
+  <g transform="translate(16, 35)">
+    <circle cx="0" cy="-2" r="5" fill="#6366F1" />
+    <path
+      d="M -6 6 Q 0 2, 6 6"
+      stroke="#6366F1"
+      stroke-width="2"
+      stroke-linecap="round"
+      fill="none"
+    />
+  </g>
+  
+  <!-- Person 2 (center) - larger -->
+  <g transform="translate(32, 28)">
+    <circle cx="0" cy="-2" r="6" fill="#4F46E5" />
+    <path
+      d="M -7 7 Q 0 3, 7 7"
+      stroke="#4F46E5"
+      stroke-width="2.5"
+      stroke-linecap="round"
+      fill="none"
+    />
+  </g>
+  
+  <!-- Person 3 (right) -->
+  <g transform="translate(48, 35)">
+    <circle cx="0" cy="-2" r="5" fill="#6366F1" />
+    <path
+      d="M -6 6 Q 0 2, 6 6"
+      stroke="#6366F1"
+      stroke-width="2"
+      stroke-linecap="round"
+      fill="none"
+    />
+  </g>
+  
+  <!-- Destination pin -->
+  <g transform="translate(54, 40)">
+    <circle cx="0" cy="0" r="4" fill="#4F46E5" />
+    <path
+      d="M 0 4 L -3 8 L 0 10 L 3 8 Z"
+      fill="#4F46E5"
+    />
+  </g>
+  
+  <!-- Start point -->
+  <circle cx="10" cy="40" r="3" fill="#818CF8" />
+</svg>

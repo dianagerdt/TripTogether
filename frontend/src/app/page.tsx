@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useAuth } from '@/contexts/AuthContext'
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { Logo } from '@/components/Logo'
 
 export default function HomePage() {
   const { isAuthenticated, isLoading } = useAuth()
@@ -29,13 +30,9 @@ export default function HomePage() {
       <main className="flex-1 flex items-center justify-center px-4">
         <div className="text-center max-w-2xl">
           {/* Logo */}
-          <div className="mb-8">
-            <span className="text-6xl">✈️</span>
+          <div className="mb-8 flex justify-center">
+            <Logo size="xl" showText={true} />
           </div>
-
-          <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-4">
-            Trip<span className="text-primary-600">Together</span>
-          </h1>
           
           <p className="text-xl text-gray-600 mb-8">
             Планируйте путешествия с друзьями. Собирайте пожелания, 
