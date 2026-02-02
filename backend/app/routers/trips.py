@@ -159,6 +159,7 @@ def get_trip(
         created_by_id=trip.created_by_id,
         created_at=trip.created_at,
         participants=participants,
+        max_generation_count=settings.max_generation_count,
     )
 
 

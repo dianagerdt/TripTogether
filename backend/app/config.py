@@ -12,21 +12,24 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
     
-    # OpenAI
-    openai_api_key: str = ""
+    # DeepSeek API (compatible with OpenAI API)
+    deepseek_api_key: str = "sk-4e85e818b1474aa785e051f70321fdc9"
+    deepseek_base_url: str = "https://api.deepseek.com"
+    deepseek_model: str = "deepseek-chat"
     
     # App
     app_env: str = "development"
     frontend_url: str = "http://localhost:3000"
     
     # Limits
-    max_generation_count: int = 3
+    max_generation_count: int = 10
     max_participants_per_trip: int = 10
     max_preferences_per_trip: int = 50
     
     class Config:
         env_file = ".env"
         case_sensitive = False
+        env_prefix = ""  # No prefix, read directly from environment
 
 
 @lru_cache()

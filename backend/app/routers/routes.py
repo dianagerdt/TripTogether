@@ -160,7 +160,26 @@ async def generate_trip_routes(
     except Exception as e:
         trip.generation_status = GenerationStatus.FAILED
         db.commit()
-        raise HTTPException(
-            status_code=500,
-            detail=f"Ошибка генерации маршрутов: {str(e)}"
-        )
+        
+        # Handle DeepSeek API errors
+        error_str = str(e)
+        if "insufficient_quota" in error_str or "429" in error_str:
+            raise HTTPException(
+                status_code=429,
+                detail="Превышен лимит использования DeepSeek API. Пожалуйста, проверьте баланс и настройки API ключа."
+            )
+        elif "rate_limit" in error_str.lower() or "rate limit" in error_str.lower():
+            raise HTTPException(
+                status_code=429,
+                detail="Превышен лимит запросов к DeepSeek API. Пожалуйста, подождите немного и попробуйте снова."
+            )
+        elif "invalid_api_key" in error_str.lower() or "authentication" in error_str.lower():
+            raise HTTPException(
+                status_code=500,
+                detail="Ошибка аутентификации DeepSeek API. Пожалуйста, проверьте настройки API ключа."
+            )
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Ошибка генерации маршрутов: {str(e)}"
+            )

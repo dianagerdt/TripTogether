@@ -63,6 +63,7 @@ class TripResponse(TripBase):
 
 class TripDetailResponse(TripResponse):
     participants: List[ParticipantResponse] = []
+    max_generation_count: int
     
     class Config:
         from_attributes = True

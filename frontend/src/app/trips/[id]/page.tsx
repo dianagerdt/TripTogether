@@ -195,8 +195,34 @@ function AddPreferenceModal({
   tripId: number
   onSuccess: () => void
 }) {
-  const [country, setCountry] = useState('')
-  const [city, setCity] = useState('')
+  const storageKey = `trip_${tripId}_last_location`
+  
+  // Load saved country and city from localStorage
+  const loadSavedLocation = () => {
+    try {
+      const saved = localStorage.getItem(storageKey)
+      if (saved) {
+        const { country: savedCountry, city: savedCity } = JSON.parse(saved)
+        return { country: savedCountry || '', city: savedCity || '' }
+      }
+    } catch (e) {
+      // Ignore errors
+    }
+    return { country: '', city: '' }
+  }
+  
+  // Save country and city to localStorage
+  const saveLocation = (country: string, city: string) => {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify({ country, city }))
+    } catch (e) {
+      // Ignore errors
+    }
+  }
+  
+  const savedLocation = loadSavedLocation()
+  const [country, setCountry] = useState(savedLocation.country)
+  const [city, setCity] = useState(savedLocation.city)
   const [location, setLocation] = useState('')
   const [placeType, setPlaceType] = useState<PlaceType>('viewpoint')
   const [priority, setPriority] = useState(3)
@@ -212,28 +238,41 @@ function AddPreferenceModal({
   const citySuggestions = city && country ? getCitiesForCountry(country).filter(c => c.toLowerCase().includes(city.toLowerCase())).slice(0, 8) : 
                          city ? searchCities(city).slice(0, 8) : []
 
-  // Autofocus on open
+  // Load saved location when modal opens
   useEffect(() => {
-    if (isOpen && inputRef.current) {
-      setTimeout(() => inputRef.current?.focus(), 100)
+    if (isOpen) {
+      const saved = loadSavedLocation()
+      setCountry(saved.country)
+      setCity(saved.city)
+      if (inputRef.current) {
+        setTimeout(() => inputRef.current?.focus(), 100)
+      }
     }
   }, [isOpen])
 
   // Reset city when country changes
   useEffect(() => {
     if (country) {
-      setCity('')
+      // Only reset city if it doesn't match the new country
+      const citiesForCountry = getCitiesForCountry(country)
+      if (city && !citiesForCountry.includes(city)) {
+        setCity('')
+      }
     }
   }, [country])
 
   const mutation = useMutation({
     mutationFn: (data: CreatePreferenceData) => createPreference(tripId, data),
     onSuccess: () => {
+      // Save country and city for next time
+      if (country && city) {
+        saveLocation(country, city)
+      }
+      
       showToast('Пожелание добавлено! 📍', 'success')
       onSuccess()
       onClose()
-      setCountry('')
-      setCity('')
+      // Don't reset country and city - keep them for next time
       setLocation('')
       setPlaceType('viewpoint')
       setPriority(3)

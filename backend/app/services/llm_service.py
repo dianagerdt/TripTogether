@@ -8,7 +8,7 @@ from app.models import Trip, PlacePreference
 
 def load_system_prompt() -> str:
     """Load the system prompt from file."""
-    prompt_path = Path(__file__).parent.parent / "prompts" / "trip_planner.txt"
+    prompt_path = Path(__file__).parent.parent / "prompts" / "trip_planner.md"
     with open(prompt_path, "r", encoding="utf-8") as f:
         return f.read()
 
@@ -18,13 +18,20 @@ def build_user_prompt(trip: Trip, preferences: List[PlacePreference]) -> str:
     lines = [
         f"## Trip Information",
         f"- Title: {trip.title}",
+    ]
+    
+    # Add description if provided
+    if trip.description:
+        lines.append(f"- Description: {trip.description}")
+    
+    lines.extend([
         f"- Start Date: {trip.start_date}",
         f"- End Date: {trip.end_date}",
         f"- Duration: {(trip.end_date - trip.start_date).days + 1} days",
         "",
         f"## Participant Preferences ({len(preferences)} total)",
         ""
-    ]
+    ])
     
     for pref in preferences:
         location_str = f", {pref.location}" if pref.location else ""
@@ -96,45 +103,39 @@ def parse_llm_response(content: str) -> List[dict]:
 
 
 async def generate_routes(trip: Trip, preferences: List[PlacePreference]) -> List[dict]:
-    """Generate route options using OpenAI."""
-    if not settings.openai_api_key:
-        raise ValueError("OpenAI API key is not configured")
+    """Generate route options using DeepSeek API."""
+    if not settings.deepseek_api_key:
+        raise ValueError("DeepSeek API key is not configured")
     
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = OpenAI(
+        api_key=settings.deepseek_api_key,
+        base_url=settings.deepseek_base_url
+    )
     
     system_prompt = load_system_prompt()
     user_prompt = build_user_prompt(trip, preferences)
     
-    # Add format instructions
-    format_instructions = """
-
-## Response Format
-Please structure your response exactly like this for each route option:
-
-### Вариант 1: [Title]
-**Маршрут:**
-День 1: [activities]
-День 2: [activities]
-...
-
-**Обоснование:**
-[Your reasoning here]
-
-### Вариант 2: [Title]
-...
-
-Provide 2-3 route options.
-"""
-    
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": system_prompt + format_instructions},
-            {"role": "user", "content": user_prompt}
-        ],
-        temperature=0.7,
-        max_tokens=3000,
-    )
+    try:
+        response = client.chat.completions.create(
+            model=settings.deepseek_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.7,
+            max_tokens=3000,
+        )
+    except Exception as e:
+        # Re-raise with more context for DeepSeek API errors
+        error_msg = str(e)
+        if "insufficient_quota" in error_msg or "429" in error_msg:
+            raise Exception(f"Error code: 429 - {str(e)}")
+        elif "rate_limit" in error_msg.lower():
+            raise Exception(f"Error code: 429 - Rate limit exceeded: {str(e)}")
+        elif "invalid_api_key" in error_msg.lower() or "authentication" in error_msg.lower():
+            raise Exception(f"Error code: 401 - Invalid API key: {str(e)}")
+        else:
+            raise Exception(f"DeepSeek API error: {str(e)}")
     
     content = response.choices[0].message.content
     routes = parse_llm_response(content)
