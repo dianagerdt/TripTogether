@@ -224,14 +224,43 @@ function AddPreferenceModal({
   onClose,
   tripId,
   onSuccess,
+  preferences = [],
 }: {
   isOpen: boolean
   onClose: () => void
   tripId: number
   onSuccess: () => void
+  preferences?: Preference[]
 }) {
   const storageKey = `trip_${tripId}_last_location`
-  
+  const suggestionsCacheKey = `trip_${tripId}_place_suggestions_cache`
+
+  const suggestionsCacheLookup = (c: string, t: string) => `${(c || '').trim()}|${(t || '').trim()}`
+
+  const getCachedSuggestions = (countryVal: string, cityVal: string): PlaceSuggestion[] | null => {
+    try {
+      const raw = localStorage.getItem(suggestionsCacheKey)
+      if (!raw) return null
+      const cache: Record<string, PlaceSuggestion[]> = JSON.parse(raw)
+      const key = suggestionsCacheLookup(countryVal, cityVal)
+      const list = cache[key]
+      return Array.isArray(list) && list.length > 0 ? list : null
+    } catch {
+      return null
+    }
+  }
+
+  const setCachedSuggestions = (countryVal: string, cityVal: string, list: PlaceSuggestion[]) => {
+    try {
+      const raw = localStorage.getItem(suggestionsCacheKey)
+      const cache: Record<string, PlaceSuggestion[]> = raw ? JSON.parse(raw) : {}
+      cache[suggestionsCacheLookup(countryVal, cityVal)] = list
+      localStorage.setItem(suggestionsCacheKey, JSON.stringify(cache))
+    } catch {
+      // ignore
+    }
+  }
+
   // Load saved country and city from localStorage
   const loadSavedLocation = () => {
     try {
@@ -276,14 +305,15 @@ function AddPreferenceModal({
   const citySuggestions = city && country ? getCitiesForCountry(country).filter(c => c.toLowerCase().includes(city.toLowerCase())).slice(0, 8) : 
                          city ? searchCities(city).slice(0, 8) : []
 
-  // Load saved location when modal opens; reset AI suggestions
+  // Load saved location and cached suggestions when modal opens
   useEffect(() => {
     if (isOpen) {
       const saved = loadSavedLocation()
       setCountry(saved.country)
       setCity(saved.city)
-      setSuggestions(null)
       setSuggestionsError(null)
+      const cached = getCachedSuggestions(saved.country, saved.city)
+      setSuggestions(cached ?? null)
       if (inputRef.current) {
         setTimeout(() => inputRef.current?.focus(), 100)
       }
@@ -300,13 +330,23 @@ function AddPreferenceModal({
     }
   }, [country])
 
+  // When country or city change, show cached suggestions for this pair if any
+  useEffect(() => {
+    if (!isOpen || !country.trim() || !city.trim()) return
+    const cached = getCachedSuggestions(country, city)
+    setSuggestions(cached ?? null)
+  }, [country, city, isOpen])
+
   const fetchSuggestions = () => {
     if (!country.trim() || !city.trim()) return
     setSuggestionsError(null)
     setSuggestions(null)
     setSuggestionsLoading(true)
-    getPlaceSuggestions(country, city)
-      .then((list) => setSuggestions(list))
+    getPlaceSuggestions(country, city, tripId)
+      .then((list) => {
+        setSuggestions(list)
+        setCachedSuggestions(country, city, list)
+      })
       .catch((err: any) => {
         setSuggestionsError(getErrorMessage(err, 'Не удалось загрузить подсказки'))
         setSuggestions([])
@@ -320,6 +360,22 @@ function AddPreferenceModal({
     if (s.reason) setComment(s.reason)
     setSuggestions(null)
   }
+
+  const alreadyAddedNames = React.useMemo(() => {
+    const names = new Set(
+      (preferences || [])
+        .filter((p) => p.trip_id === tripId && (p.country || '').trim() === (country || '').trim() && (p.city || '').trim() === (city || '').trim())
+        .map((p) => (p.location || '').trim().toLowerCase())
+        .filter(Boolean)
+    )
+    return names
+  }, [preferences, tripId, country, city])
+
+  const suggestionsToShow = React.useMemo(() => {
+    if (!suggestions || suggestions.length === 0) return suggestions
+    const filtered = suggestions.filter((s) => !alreadyAddedNames.has((s.name || '').trim().toLowerCase()))
+    return filtered.length > 0 ? filtered : null
+  }, [suggestions, alreadyAddedNames])
 
   const mutation = useMutation({
     mutationFn: (data: CreatePreferenceData) => createPreference(tripId, data),
@@ -425,12 +481,15 @@ function AddPreferenceModal({
               {suggestionsError && (
                 <p className="mt-1 text-sm text-red-600" role="alert">{suggestionsError}</p>
               )}
-              {suggestions && suggestions.length > 0 && (
+              {suggestions && suggestions.length > 0 && suggestionsToShow?.length === 0 && (
+                <p className="mt-2 text-sm text-gray-500">Все подсказанные места уже в списке пожеланий. Нажмите «Подсказать места» ещё раз для новых идей.</p>
+              )}
+              {suggestionsToShow && suggestionsToShow.length > 0 && (
                 <div className="mt-2 p-3 bg-gray-50 rounded-lg border border-gray-100">
                   <p className="text-xs text-gray-500 mb-2">Выберите место — подставятся название и тип</p>
                   <div className="flex flex-wrap gap-2">
-                    {suggestions.map((s) => (
-                      <button
+                    {suggestionsToShow.map((s) => (
+                        <button
                         key={`${s.name}-${s.place_type}-${s.reason || ''}`}
                         type="button"
                         onClick={() => applySuggestion(s)}
@@ -1738,7 +1797,7 @@ function TripDetailContent() {
         </div>
       </main>
 
-      <AddPreferenceModal isOpen={showAddPref} onClose={() => setShowAddPref(false)} tripId={tripId} onSuccess={handleRefresh} />
+      <AddPreferenceModal isOpen={showAddPref} onClose={() => setShowAddPref(false)} tripId={tripId} onSuccess={handleRefresh} preferences={preferences ?? undefined} />
       <EditPreferenceModal 
         isOpen={showEditPref} 
         onClose={() => { setShowEditPref(false); setEditingPreference(null) }} 

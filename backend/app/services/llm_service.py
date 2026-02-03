@@ -151,15 +151,29 @@ async def generate_routes(trip: Trip, preferences: List[PlacePreference]) -> Lis
     return routes
 
 
-def load_place_suggestions_prompt(country: str, city: str) -> str:
-    """Load place suggestions prompt from file and substitute country/city."""
+def load_place_suggestions_prompt(
+    country: str, city: str, exclude_names: List[str] | None = None
+) -> str:
+    """Load place suggestions prompt from file and substitute country/city and optional exclude list."""
     prompt_path = Path(__file__).parent.parent / "prompts" / "place_suggestions.md"
     with open(prompt_path, "r", encoding="utf-8") as f:
         template = f.read()
-    return template.replace("{{country}}", country).replace("{{city}}", city)
+    template = template.replace("{{country}}", country).replace("{{city}}", city)
+    if exclude_names:
+        names = [n.strip() for n in exclude_names if n and isinstance(n, str)]
+        if names:
+            exclude_block = "Уже в списке пожеланий (не предлагай снова): " + ", ".join(names[:30])
+        else:
+            exclude_block = ""
+    else:
+        exclude_block = ""
+    template = template.replace("{{exclude_block}}", f"\n{exclude_block}\n" if exclude_block else "")
+    return template
 
 
-async def suggest_places(country: str, city: str) -> List[dict]:
+async def suggest_places(
+    country: str, city: str, exclude_names: List[str] | None = None
+) -> List[dict]:
     """Suggest popular places for a city. Returns list of {name, place_type}."""
     if not settings.deepseek_api_key:
         raise ValueError("DeepSeek API key is not configured")
@@ -172,7 +186,7 @@ async def suggest_places(country: str, city: str) -> List[dict]:
         api_key=settings.deepseek_api_key,
         base_url=settings.deepseek_base_url,
     )
-    user_prompt = load_place_suggestions_prompt(country, city)
+    user_prompt = load_place_suggestions_prompt(country, city, exclude_names)
 
     try:
         response = client.chat.completions.create(
