@@ -2,15 +2,12 @@ from pydantic_settings import BaseSettings
 from pydantic import model_validator
 from functools import lru_cache
 
-_DEFAULT_JWT_SECRET = "your-super-secret-key-change-in-production"
-
-
 class Settings(BaseSettings):
-    # Database
+    # Database (в production задайте DATABASE_URL в .env)
     database_url: str = "postgresql://postgres:postgres@db:5432/triptogether"
     
-    # JWT
-    jwt_secret: str = _DEFAULT_JWT_SECRET
+    # JWT (в production обязательно задайте JWT_SECRET в .env)
+    jwt_secret: str = ""
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
@@ -34,10 +31,9 @@ class Settings(BaseSettings):
     
     @model_validator(mode="after")
     def require_secret_in_production(self):
-        if self.app_env == "production" and self.jwt_secret == _DEFAULT_JWT_SECRET:
+        if self.app_env == "production" and not (self.jwt_secret and self.jwt_secret.strip()):
             raise ValueError(
-                "В production необходимо задать JWT_SECRET в переменных окружения. "
-                "Не используйте значение по умолчанию."
+                "В production необходимо задать JWT_SECRET в переменных окружения."
             )
         return self
 
