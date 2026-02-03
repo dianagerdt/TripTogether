@@ -335,3 +335,45 @@ async def generate_packing_list(
         raise Exception(f"Ошибка генерации: {e}")
     text = (response.choices[0].message.content or "").strip()
     return parse_packing_response(text)
+
+
+# --- Why not included (on-demand explanation) ---
+
+async def explain_why_not_included(
+    route_title: str,
+    route_description: str,
+    place_name: str,
+    country: str,
+    city: str,
+    priority: int,
+    comment: str | None,
+) -> str:
+    """Ask LLM why a place was not included in a given route. Returns one short phrase."""
+    if not settings.deepseek_api_key:
+        raise ValueError("DeepSeek API key is not configured")
+    client = OpenAI(
+        api_key=settings.deepseek_api_key,
+        base_url=settings.deepseek_base_url,
+    )
+    place_label = place_name.strip() or f"{city}, {country}"
+    user_prompt = (
+        f"Маршрут: «{route_title}»\n\n"
+        f"Описание маршрута:\n{(route_description or '')[:1500]}\n\n"
+        f"Место из пожеланий участников, которое не вошло в этот маршрут: {place_label} ({city}, {country}), приоритет {priority}/5."
+        + (f' Комментарий участника: "{comment}".' if comment else "")
+        + "\n\nПочему это место не вошло в данный маршрут? Ответь одной короткой фразой на русском (до 15 слов), без вступления."
+    )
+    try:
+        response = client.chat.completions.create(
+            model=settings.deepseek_model,
+            messages=[{"role": "user", "content": user_prompt}],
+            temperature=0.3,
+            max_tokens=150,
+        )
+    except Exception as e:
+        err = str(e).lower()
+        if "429" in err or "rate_limit" in err:
+            raise Exception("Превышен лимит запросов. Попробуйте позже.")
+        raise Exception(f"Ошибка: {e}")
+    text = (response.choices[0].message.content or "").strip()
+    return text[:300] if text else "Не удалось сформировать объяснение."

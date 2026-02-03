@@ -1,14 +1,15 @@
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from app.database import get_db
 from app.models import User, Trip, TripParticipant, PlacePreference, RouteOption, Vote, GenerationStatus, ParticipantRole
 from app.schemas.route import RouteOptionResponse, GenerateRoutesResponse
-from app.services.llm_service import generate_routes
+from app.services.llm_service import generate_routes, explain_why_not_included
 from app.utils.deps import get_current_user
 from app.config import settings
 import asyncio
+import json
 
 router = APIRouter()
 
@@ -28,6 +29,70 @@ def check_user_is_participant(trip_id: int, user_id: int, db: Session) -> TripPa
     if not participant:
         raise HTTPException(status_code=403, detail="Вы не являетесь участником этой поездки")
     return participant
+
+
+def _normalize_for_match(s: str) -> str:
+    if not s:
+        return ""
+    for c in "*#_`[]().,-—–":
+        s = s.replace(c, " ")
+    return " ".join(s.split()).strip().lower()
+
+
+def _is_place_mentioned_in_route(route_text: str, location: str | None, city: str | None) -> bool:
+    if not route_text:
+        return False
+    text = _normalize_for_match(route_text)
+    loc = (location or "").strip()
+    cit = (city or "").strip()
+    # exact substring (location or city)
+    if loc:
+        nloc = _normalize_for_match(loc)
+        if nloc and nloc in text:
+            return True
+    if cit:
+        ncit = _normalize_for_match(cit)
+        if ncit and ncit in text:
+            return True
+    # all significant words present (handles "Санкт-Петербург" vs "Санкт Петербург" in route)
+    if loc:
+        words = [w for w in _normalize_for_match(loc).split() if len(w) >= 2]
+        if words and all(w in text for w in words):
+            return True
+    if cit:
+        words = [w for w in _normalize_for_match(cit).split() if len(w) >= 2]
+        if words and all(w in text for w in words):
+            return True
+    return False
+
+
+@router.get("/{trip_id}/routes/{route_id}/preferences-not-in-route")
+def get_preferences_not_in_route(
+    trip_id: int,
+    route_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return preference IDs that are not mentioned in this route's text (for 'why not included' list)."""
+    get_trip_or_404(trip_id, db)
+    check_user_is_participant(trip_id, current_user.id, db)
+    route = db.query(RouteOption).filter(
+        RouteOption.id == route_id,
+        RouteOption.trip_id == trip_id,
+    ).first()
+    if not route:
+        raise HTTPException(status_code=404, detail="Маршрут не найден")
+    route_text_parts = [route.description or "", route.reasoning or ""]
+    if getattr(route, "route_data", None) and isinstance(route.route_data, dict):
+        route_text_parts.append(json.dumps(route.route_data, ensure_ascii=False))
+    route_text = " ".join(route_text_parts)
+    prefs = db.query(PlacePreference).filter(PlacePreference.trip_id == trip_id).all()
+    not_in_route = [
+        p.id
+        for p in prefs
+        if not _is_place_mentioned_in_route(route_text, p.location, p.city)
+    ]
+    return {"preference_ids": not_in_route}
 
 
 @router.get("/{trip_id}/routes", response_model=List[RouteOptionResponse])
@@ -67,6 +132,48 @@ def get_routes(
         )
         for route, vote_count in routes
     ]
+
+
+@router.get("/{trip_id}/routes/{route_id}/why-not-included")
+async def get_why_not_included(
+    trip_id: int,
+    route_id: int,
+    preference_id: int = Query(..., description="ID пожелания (места)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get a short AI explanation of why a place (preference) was not included in this route."""
+    get_trip_or_404(trip_id, db)
+    check_user_is_participant(trip_id, current_user.id, db)
+    route = db.query(RouteOption).filter(
+        RouteOption.id == route_id,
+        RouteOption.trip_id == trip_id,
+    ).first()
+    if not route:
+        raise HTTPException(status_code=404, detail="Маршрут не найден")
+    pref = db.query(PlacePreference).filter(
+        PlacePreference.id == preference_id,
+        PlacePreference.trip_id == trip_id,
+    ).first()
+    if not pref:
+        raise HTTPException(status_code=404, detail="Пожелание не найдено")
+    place_name = (pref.location or "").strip() or f"{pref.city}"
+    try:
+        reason = await explain_why_not_included(
+            route_title=route.title,
+            route_description=route.description or "",
+            place_name=place_name,
+            country=pref.country or "",
+            city=pref.city or "",
+            priority=pref.priority or 3,
+            comment=pref.comment,
+        )
+        return {"reason": reason}
+    except Exception as e:
+        err = str(e).lower()
+        if "429" in err or "лимит" in err:
+            raise HTTPException(status_code=429, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/{trip_id}/generate-routes", response_model=GenerateRoutesResponse)

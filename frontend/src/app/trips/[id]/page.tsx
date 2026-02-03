@@ -3,14 +3,14 @@
 import React, { useState, useRef, useEffect } from 'react'
 import type { ChangeEvent, FormEvent, MouseEvent, FocusEvent } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/AuthContext'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { getTrip, deleteTrip, leaveTrip } from '@/lib/trips'
 import { getPreferences, createPreference, updatePreference, deletePreference, PLACE_TYPE_LABELS, PLACE_TYPES, getTripReactions, addReaction, removeReaction, AVAILABLE_EMOJIS, PreferenceReactions, ReactionData } from '@/lib/preferences'
 import { getPlaceSuggestions, PlaceSuggestion } from '@/lib/suggestions'
 import { getAllCountries, getCitiesForCountry, searchCities } from '@/lib/cities'
-import { getRoutes, generateRoutes } from '@/lib/routes'
+import { getRoutes, generateRoutes, getWhyNotIncluded, getPreferencesNotInRoute } from '@/lib/routes'
 import { getChecklist, generateChecklist } from '@/lib/checklist'
 import api from '@/lib/api'
 import { Trip, Participant, Preference, PlaceType, CreatePreferenceData, RouteOption, TripChecklist } from '@/types'
@@ -826,10 +826,41 @@ function PreferenceCard({
   )
 }
 
-function RouteCard({ route, tripId, isVoted, onVote, onRemoveVote }: { route: RouteOption; tripId: number; isVoted: boolean; onVote: () => void; onRemoveVote: () => void; key?: number | string }) {
+function RouteCard({
+  route,
+  tripId,
+  isVoted,
+  onVote,
+  onRemoveVote,
+  preferences = [],
+  preferenceIdsNotInRoute = [],
+}: {
+  route: RouteOption
+  tripId: number
+  isVoted: boolean
+  onVote: () => void
+  onRemoveVote: () => void
+  preferences?: Preference[]
+  preferenceIdsNotInRoute?: number[]
+  key?: number | string
+}) {
   const { showToast } = useToast()
   const [copied, setCopied] = useState(false)
-  
+  const [whyNotState, setWhyNotState] = useState<Record<number, { loading?: boolean; reason?: string }>>({})
+
+  const preferencesNotInRoute = (preferences || []).filter((p) => preferenceIdsNotInRoute.includes(p.id))
+
+  const fetchWhyNot = async (prefId: number) => {
+    setWhyNotState((s) => ({ ...s, [prefId]: { ...s[prefId], loading: true } }))
+    try {
+      const { reason } = await getWhyNotIncluded(tripId, route.id, prefId)
+      setWhyNotState((s) => ({ ...s, [prefId]: { loading: false, reason } }))
+    } catch (err: any) {
+      setWhyNotState((s) => ({ ...s, [prefId]: { loading: false, reason: undefined } }))
+      showToast(err?.response?.data?.detail || 'Не удалось загрузить объяснение', 'error')
+    }
+  }
+
   const handleVote = () => {
     onVote()
     showToast('Голос учтён! 🗳️', 'success')
@@ -890,6 +921,40 @@ function RouteCard({ route, tripId, isVoted, onVote, onRemoveVote }: { route: Ro
       <button onClick={isVoted ? handleRemoveVote : handleVote} className={isVoted ? 'btn-secondary w-full' : 'btn-primary w-full'}>
         {isVoted ? '✓ Голос отдан — нажмите, чтобы отменить' : 'Голосовать за этот маршрут'}
       </button>
+
+      <div className="mt-4 pt-4 border-t border-gray-200 bg-gray-50 rounded-lg p-3 -mx-1">
+        <p className="text-sm font-medium text-gray-700 mb-2">Почему место не вошло в этот маршрут?</p>
+        {preferencesNotInRoute.length > 0 ? (
+          <ul className="space-y-2">
+            {preferencesNotInRoute.map((pref) => {
+              const label = (pref.location || '').trim() || `${pref.city}, ${pref.country}`
+              const state = whyNotState[pref.id]
+              return (
+                <li key={pref.id} className="text-sm">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-gray-700">{label}</span>
+                    <button
+                      type="button"
+                      onClick={() => fetchWhyNot(pref.id)}
+                      disabled={state?.loading}
+                      className="px-2 py-1 rounded bg-primary-100 text-primary-700 hover:bg-primary-200 text-xs font-medium disabled:opacity-50 transition-colors"
+                    >
+                      {state?.loading ? 'Загрузка...' : 'Почему не вошло?'}
+                    </button>
+                  </div>
+                  {state?.reason && (
+                    <p className="mt-1 pl-2 text-gray-600 italic border-l-2 border-primary-300 text-xs">{state.reason}</p>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        ) : preferences && preferences.length > 0 ? (
+          <p className="text-xs text-gray-500">Все перечисленные места учтены в этом маршруте.</p>
+        ) : (
+          <p className="text-xs text-gray-500">Нет пожеланий в поездке — добавьте места на вкладке «Пожелания».</p>
+        )}
+      </div>
     </div>
   )
 }
@@ -938,6 +1003,18 @@ function TripDetailContent() {
   const { data: trip, isLoading } = useQuery<Trip>({ queryKey: ['trip', tripId], queryFn: () => getTrip(tripId) })
   const { data: preferences } = useQuery<Preference[]>({ queryKey: ['preferences', tripId], queryFn: () => getPreferences(tripId) })
   const { data: routes } = useQuery<RouteOption[]>({ queryKey: ['routes', tripId], queryFn: () => getRoutes(tripId) })
+  const notInRouteQueries = useQueries({
+    queries: (routes ?? []).map((r) => ({
+      queryKey: ['preferences-not-in-route', tripId, r.id],
+      queryFn: () => getPreferencesNotInRoute(tripId, r.id),
+      enabled: !!tripId && !!routes?.length,
+    })),
+  })
+  const notInRouteByRouteId: Record<number, number[]> = {}
+  ;(routes ?? []).forEach((r, i) => {
+    const d = notInRouteQueries[i]?.data
+    if (d) notInRouteByRouteId[r.id] = d.preference_ids
+  })
   const { data: myVotes } = useQuery<number[]>({ queryKey: ['myVotes', tripId], queryFn: () => api.get(`/api/trips/${tripId}/my-votes`).then((r: any) => r.data.route_option_ids as number[]) })
   const { data: reactions } = useQuery<PreferenceReactions[]>({ 
     queryKey: ['reactions', tripId], 
@@ -1064,6 +1141,8 @@ function TripDetailContent() {
 
   const isOrganizer = trip.created_by_id === user?.id
   const formatDate = (d: string) => new Date(d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
+  const tripDaysCount = trip ? Math.round((new Date(trip.end_date).getTime() - new Date(trip.start_date).getTime()) / (1000 * 60 * 60 * 24)) + 1 : 0
+  const daysLabel = (n: number) => (n % 10 === 1 && n % 100 !== 11 ? 'день' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 'дня' : 'дней')
   const handleRefresh = () => { queryClient.invalidateQueries({ queryKey: ['preferences', tripId] }) }
   
   // Share functions
@@ -1155,7 +1234,7 @@ function TripDetailContent() {
               <h2 className="text-2xl font-bold text-gray-900 mb-2">{trip.title}</h2>
               {trip.description && <p className="text-gray-500 mb-3">{trip.description}</p>}
               <div className="flex items-center gap-4 text-sm text-gray-500">
-                <span>📅 {formatDate(trip.start_date)} — {formatDate(trip.end_date)}</span>
+                <span>📅 {formatDate(trip.start_date)} — {formatDate(trip.end_date)} · {tripDaysCount} {daysLabel(tripDaysCount)}</span>
                 <span>👥 {trip.participants?.length || 0}</span>
                 <span className={`px-2 py-1 rounded text-xs ${trip.generation_status === 'completed' ? 'bg-green-100 text-green-700' : trip.generation_status === 'in_progress' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'}`}>
                   {trip.generation_status === 'completed' ? '✓ Маршруты готовы' : trip.generation_status === 'in_progress' ? '⏳ Генерация...' : 'Нет маршрутов'}
@@ -1517,6 +1596,8 @@ function TripDetailContent() {
                         isVoted={myVotes?.includes(r.id) || false} 
                         onVote={() => voteMutation.mutate(r.id)}
                         onRemoveVote={() => removeVoteMutation.mutate(r.id)}
+                        preferences={preferences ?? undefined}
+                        preferenceIdsNotInRoute={notInRouteByRouteId[r.id] ?? []}
                       />
                     ))}
                   </div>
