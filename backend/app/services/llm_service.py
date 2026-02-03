@@ -220,3 +220,104 @@ async def suggest_places(country: str, city: str) -> List[dict]:
             "reason": reason or None,
         })
     return result[:10]
+
+
+# --- Packing checklist ---
+
+def load_packing_prompt() -> str:
+    prompt_path = Path(__file__).parent.parent / "prompts" / "packing_list.md"
+    with open(prompt_path, "r", encoding="utf-8") as f:
+        return f.read()
+
+
+def build_packing_user_prompt(
+    trip: Trip,
+    winner_route_title: str,
+    winner_route_description: str,
+    places_from_route: str | None = None,
+) -> str:
+    duration = (trip.end_date - trip.start_date).days + 1
+    lines = [
+        f"Поездка: {trip.title}",
+        f"Даты: {trip.start_date} — {trip.end_date}, {duration} дн.",
+    ]
+    if trip.description:
+        lines.append(f"Описание поездки: {trip.description}")
+    if places_from_route:
+        lines.append(f"Страны и города маршрута (из пожеланий участников): {places_from_route}")
+    lines.extend([
+        "",
+        f"Выбранный маршрут (набрал больше всего голосов): «{winner_route_title}»",
+        "Описание маршрута:",
+        (winner_route_description or "")[:2000],
+    ])
+    return "\n".join(lines)
+
+
+def parse_packing_response(content: str) -> dict:
+    """Parse LLM response into checklist content dict. Returns { categories: [ { name, items }, ... ] }."""
+    content = (content or "").strip()
+    if content.startswith("```"):
+        content = content.split("\n", 1)[-1] if "\n" in content else content[3:]
+    if content.endswith("```"):
+        content = content.rsplit("```", 1)[0].strip()
+    try:
+        data = json.loads(content)
+    except json.JSONDecodeError:
+        return {"categories": []}
+    if not isinstance(data, dict):
+        return {"categories": []}
+    cats = data.get("categories")
+    if not isinstance(cats, list):
+        return {"categories": []}
+    result = []
+    for c in cats:
+        if not isinstance(c, dict):
+            continue
+        name = (c.get("name") or "").strip()
+        items = c.get("items")
+        if not name or not isinstance(items, list):
+            continue
+        result.append({
+            "name": name,
+            "items": [str(x).strip() for x in items if x][:15],
+        })
+    return {"categories": result}
+
+
+async def generate_packing_list(
+    trip: Trip,
+    winner_route_title: str,
+    winner_route_description: str,
+    places_from_route: str | None = None,
+) -> dict:
+    """Generate packing checklist content using LLM. Returns dict for TripChecklist.content."""
+    if not settings.deepseek_api_key:
+        raise ValueError("DeepSeek API key is not configured")
+    client = OpenAI(
+        api_key=settings.deepseek_api_key,
+        base_url=settings.deepseek_base_url,
+    )
+    system_prompt = load_packing_prompt()
+    user_prompt = build_packing_user_prompt(
+        trip, winner_route_title, winner_route_description, places_from_route
+    )
+    try:
+        response = client.chat.completions.create(
+            model=settings.deepseek_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.5,
+            max_tokens=1500,
+        )
+    except Exception as e:
+        err = str(e).lower()
+        if "429" in err or "rate_limit" in err:
+            raise Exception("Превышен лимит запросов. Попробуйте позже.")
+        if "api key" in err or "invalid" in err:
+            raise Exception("Ошибка API. Проверьте настройки.")
+        raise Exception(f"Ошибка генерации: {e}")
+    text = (response.choices[0].message.content or "").strip()
+    return parse_packing_response(text)

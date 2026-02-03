@@ -8,6 +8,7 @@ from app.routers import routes
 from app.routers import votes
 from app.routers import reactions
 from app.routers import suggestions
+from app.routers import checklist
 
 app = FastAPI(
     title="TripTogether API",
@@ -55,3 +56,6 @@ app.include_router(reactions.router, prefix="/api/preferences", tags=["Reactions
 
 # AI place suggestions
 app.include_router(suggestions.router, prefix="/api", tags=["Suggestions"])
+
+# Packing checklist (after routes generated)
+app.include_router(checklist.router, prefix="/api/trips", tags=["Checklist"])

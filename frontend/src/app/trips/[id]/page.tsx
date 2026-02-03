@@ -11,8 +11,9 @@ import { getPreferences, createPreference, updatePreference, deletePreference, P
 import { getPlaceSuggestions, PlaceSuggestion } from '@/lib/suggestions'
 import { getAllCountries, getCitiesForCountry, searchCities } from '@/lib/cities'
 import { getRoutes, generateRoutes } from '@/lib/routes'
+import { getChecklist, generateChecklist } from '@/lib/checklist'
 import api from '@/lib/api'
-import { Trip, Participant, Preference, PlaceType, CreatePreferenceData, RouteOption } from '@/types'
+import { Trip, Participant, Preference, PlaceType, CreatePreferenceData, RouteOption, TripChecklist } from '@/types'
 import { useToast } from '@/components/ui/Toast'
 import { EmptyState, TripDetailSkeleton, PreferencesListSkeleton, RoutesListSkeleton } from '@/components/ui'
 import { GenerationProgress } from '@/components/ui/GenerationProgress'
@@ -162,10 +163,12 @@ function renderMarkdown(text: string): any {
 
 // Helper: What's next hints
 function getNextStepHint(
-  preferencesCount: number, 
-  routesCount: number, 
+  preferencesCount: number,
+  routesCount: number,
   participantsCount: number,
-  hasVoted: boolean
+  hasVoted: boolean,
+  hasChecklist: boolean,
+  hasRouteWithVotes: boolean
 ): { text: string; action?: string; icon: string } | null {
   if (participantsCount <= 1) {
     return { text: 'Пригласите друзей, чтобы вместе спланировать поездку', action: 'invite', icon: '👥' }
@@ -182,6 +185,9 @@ function getNextStepHint(
   if (!hasVoted && routesCount > 0) {
     return { text: 'Проголосуйте за понравившийся маршрут', action: 'vote', icon: '🗳️' }
   }
+  if (routesCount > 0 && hasRouteWithVotes && !hasChecklist) {
+    return { text: 'Соберите список вещей по маршруту', action: 'checklist', icon: '🎒' }
+  }
   return null
 }
 
@@ -191,13 +197,15 @@ function getOnboardingSteps(
   preferencesCount: number,
   routesCount: number,
   participantsCount: number,
-  hasVoted: boolean
+  hasVoted: boolean,
+  hasChecklist: boolean
 ): { key: string; label: string; icon: string; status: StepStatus }[] {
   const steps = [
     { key: 'invite', label: 'Пригласить', icon: '👥', done: participantsCount > 1 },
     { key: 'preferences', label: 'Пожелания', icon: '📍', done: preferencesCount >= 1 },
     { key: 'routes', label: 'Маршруты', icon: '🗺️', done: routesCount > 0 },
     { key: 'vote', label: 'Голосование', icon: '🗳️', done: hasVoted },
+    ...(routesCount > 0 ? [{ key: 'checklist', label: 'Что взять', icon: '🎒', done: hasChecklist }] : []),
   ]
   let foundCurrent = false
   return steps.map((s) => {
@@ -854,7 +862,7 @@ function TripDetailContent() {
   const queryClient = useQueryClient()
   const tripId = Number(params.id)
   const { showToast } = useToast()
-  const [activeTab, setActiveTab] = useState<'preferences' | 'routes' | 'voting'>('preferences')
+  const [activeTab, setActiveTab] = useState<'preferences' | 'routes' | 'voting' | 'checklist'>('preferences')
   const [showAddPref, setShowAddPref] = useState(false)
   const [showEditPref, setShowEditPref] = useState(false)
   const [editingPreference, setEditingPreference] = useState<Preference | null>(null)
@@ -876,6 +884,21 @@ function TripDetailContent() {
     queryKey: ['reactions', tripId], 
     queryFn: () => getTripReactions(tripId),
     enabled: !!preferences?.length
+  })
+  const { data: checklist } = useQuery<TripChecklist | null>({
+    queryKey: ['checklist', tripId],
+    queryFn: () => getChecklist(tripId),
+    enabled: (routes?.length ?? 0) > 0,
+  })
+  const generateChecklistMutation = useMutation({
+    mutationFn: () => generateChecklist(tripId),
+    onSuccess: () => {
+      showToast('Чек-лист готов! 🎒', 'success')
+      queryClient.invalidateQueries({ queryKey: ['checklist', tripId] })
+    },
+    onError: (err: any) => {
+      showToast(getErrorMessage(err, 'Ошибка генерации чек-листа'), 'error')
+    },
   })
 
   const deleteMutation = useMutation({ 
@@ -1008,20 +1031,33 @@ function TripDetailContent() {
     }
     setShowShareMenu(false)
   }
+
+  const shareToTelegram = () => {
+    const inviteLink = `${typeof window !== 'undefined' ? window.location.origin : ''}/join/${trip.invite_code}`
+    const datesStr = `${formatDate(trip.start_date)} — ${formatDate(trip.end_date)}`
+    const text = `🗺️ Поездка «${trip.title}»\n${datesStr}\n\nПрисоединяйся к планированию, смотри маршруты и голосуй:`
+    const url = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(text)}`
+    window.open(url, '_blank', 'noopener,noreferrer')
+    setShowShareMenu(false)
+  }
   
-  // Next step hint
+  const maxRouteVotes = Math.max(0, ...(routes?.map((r) => r.vote_count ?? 0) ?? []))
+  const canGenerateChecklist = maxRouteVotes > 0
   const nextHint = getNextStepHint(
     preferences?.length || 0,
     routes?.length || 0,
     trip.participants?.length || 0,
-    (myVotes?.length || 0) > 0
+    (myVotes?.length || 0) > 0,
+    !!checklist,
+    canGenerateChecklist
   )
-  
+
   const handleHintAction = (action?: string) => {
     if (action === 'invite') setShowShareMenu(true)
     else if (action === 'add_preference') setShowAddPref(true)
     else if (action === 'generate') generateMutation.mutate(undefined)
     else if (action === 'vote') setActiveTab('voting')
+    else if (action === 'checklist') setActiveTab('checklist')
   }
 
   const dismissWelcome = () => {
@@ -1035,7 +1071,8 @@ function TripDetailContent() {
     preferences?.length || 0,
     routes?.length || 0,
     trip.participants?.length || 0,
-    (myVotes?.length || 0) > 0
+    (myVotes?.length || 0) > 0,
+    !!checklist
   )
   const showWelcomeCard = !welcomeDismissed && (preferences?.length ?? 0) === 0 && (trip.participants?.length ?? 0) <= 1
 
@@ -1093,6 +1130,9 @@ function TripDetailContent() {
                         <button onClick={shareViaMessenger} className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 rounded-lg transition-colors flex items-center gap-2">
                           📤 Поделиться
                         </button>
+                        <button onClick={shareToTelegram} className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 rounded-lg transition-colors flex items-center gap-2">
+                          ✈️ В Telegram
+                        </button>
                       </div>
                     </div>
                   </>
@@ -1143,11 +1183,21 @@ function TripDetailContent() {
               { key: 'preferences', label: 'Пожелания', icon: '📍', count: preferences?.length },
               { key: 'routes', label: 'Маршруты', icon: '🗺️', count: routes?.length },
               { key: 'voting', label: 'Голосование', icon: '🗳️' },
-            ].map((tab) => (
-              <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={`py-4 border-b-2 font-medium text-sm transition-colors ${activeTab === tab.key ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-                {tab.icon} {tab.label} {tab.count !== undefined && <span className="ml-2 bg-gray-100 px-2 py-0.5 rounded-full text-xs">{tab.count}</span>}
-              </button>
-            ))}
+              ...((routes?.length ?? 0) > 0 ? [{ key: 'checklist', label: 'Что взять', icon: '🎒' as const }] : []),
+            ].map((tab) => {
+              const isSuggested = nextHint?.action === tab.key
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key as any)}
+                  className={`py-4 border-b-2 font-medium text-sm transition-colors ${activeTab === tab.key ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'} ${isSuggested ? 'ring-2 ring-primary-400 ring-offset-2 rounded-t' : ''}`}
+                >
+                  {tab.icon} {tab.label}
+                  {tab.count !== undefined && <span className="ml-2 bg-gray-100 px-2 py-0.5 rounded-full text-xs">{tab.count}</span>}
+                  {isSuggested && <span className="ml-1.5 text-primary-500 text-xs">· что дальше</span>}
+                </button>
+              )
+            })}
           </div>
         </div>
       </div>
@@ -1547,6 +1597,74 @@ function TripDetailContent() {
                       onClick: () => setActiveTab('routes')
                     } : undefined}
                   />
+                )}
+              </div>
+            )}
+
+            {activeTab === 'checklist' && (
+              <div>
+                <h3 className="text-lg font-semibold mb-4">Что взять с собой</h3>
+                <p className="text-sm text-gray-500 mb-4">
+                  Чек-лист составлен по маршруту, который набрал больше всего голосов. Любой участник может сгенерировать или обновить список.
+                </p>
+                {!checklist ? (
+                  <div className="card">
+                    <EmptyState
+                      icon="🎒"
+                      title="Чек-лист ещё не создан"
+                      description={canGenerateChecklist
+                        ? 'AI составит список вещей по выбранному маршруту и датам поездки'
+                        : 'Сначала проголосуйте за маршрут — чек-лист строится по варианту, набравшему большинство голосов.'}
+                      action={canGenerateChecklist ? {
+                        label: "Сгенерировать чек-лист",
+                        onClick: () => generateChecklistMutation.mutate(),
+                      } : undefined}
+                    />
+                    {generateChecklistMutation.isPending && (
+                      <div className="mt-4 flex items-center justify-center gap-2 text-sm text-gray-500">
+                        <span className="animate-spin rounded-full h-4 w-4 border-2 border-primary-500 border-t-transparent" />
+                        Генерируем список...
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {generateChecklistMutation.isPending && (
+                      <div className="flex items-center justify-center gap-2 text-sm text-gray-500 py-2">
+                        <span className="animate-spin rounded-full h-4 w-4 border-2 border-primary-500 border-t-transparent" />
+                        Обновляем...
+                      </div>
+                    )}
+                    <div className="card">
+                      <div className="space-y-6">
+                        {(checklist.content?.categories || []).map((cat, idx) => (
+                          <div key={idx}>
+                            <h4 className="font-medium text-gray-900 mb-2 flex items-center gap-2">
+                              <span className="text-primary-600">{idx + 1}.</span> {cat.name}
+                            </h4>
+                            <ul className="space-y-1.5 pl-6">
+                              {(cat.items || []).map((item, i) => (
+                                <li key={i} className="text-sm text-gray-700 flex items-center gap-2">
+                                  <span className="text-gray-400">□</span> {item}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-6 pt-4 border-t border-gray-100">
+                        <button
+                          type="button"
+                          onClick={() => generateChecklistMutation.mutate()}
+                          disabled={generateChecklistMutation.isPending || !canGenerateChecklist}
+                          className="text-sm text-primary-600 hover:text-primary-700 disabled:opacity-50"
+                          title={!canGenerateChecklist ? 'Сначала должен быть маршрут с голосами' : undefined}
+                        >
+                          {generateChecklistMutation.isPending ? 'Генерация...' : '🔄 Сгенерировать заново'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 )}
               </div>
             )}

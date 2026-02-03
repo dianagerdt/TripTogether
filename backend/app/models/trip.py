@@ -51,6 +51,7 @@ class Trip(Base):
     participants = relationship("TripParticipant", back_populates="trip", cascade="all, delete-orphan")
     preferences = relationship("PlacePreference", back_populates="trip", cascade="all, delete-orphan")
     route_options = relationship("RouteOption", back_populates="trip", cascade="all, delete-orphan")
+    checklist = relationship("TripChecklist", back_populates="trip", uselist=False, cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Trip(id={self.id}, title={self.title})>"

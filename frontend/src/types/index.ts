@@ -121,6 +121,17 @@ export interface Vote {
   created_at: string
 }
 
+// Checklist (packing list)
+export interface TripChecklist {
+  id: number
+  trip_id: number
+  created_by_id: number | null
+  created_at: string
+  content: {
+    categories: Array<{ name: string; items: string[] }>
+  }
+}
+
 // API Error
 export interface ApiError {
   detail: string

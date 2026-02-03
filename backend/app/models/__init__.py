@@ -4,6 +4,7 @@ from app.models.preference import PlacePreference, PlaceType
 from app.models.route import RouteOption
 from app.models.vote import Vote
 from app.models.reaction import Reaction
+from app.models.checklist import TripChecklist
 
 __all__ = [
     "User",
@@ -16,4 +17,5 @@ __all__ = [
     "RouteOption",
     "Vote",
     "Reaction",
+    "TripChecklist",
 ]
