@@ -20,8 +20,9 @@ cd TripTogether
 
 2. **Создать .env файл (опционально)**
 ```bash
-# Переменные окружения можно задать в docker-compose.yml
-# или создать .env файл с DEEPSEEK_API_KEY
+# Скопировать пример и заполнить секреты (API ключи в .env не коммитятся)
+cp env.example .env
+# Заполнить DEEPSEEK_API_KEY и при необходимости JWT_SECRET
 ```
 
 3. **Запустить**
@@ -92,7 +93,7 @@ docker-compose up -d
 ```
 TripTogether/
 ├── docker-compose.yml
-├── .env.example
+├── env.example
 ├── README.md
 │
 ├── backend/
@@ -192,27 +193,20 @@ docker-compose down -v
 
 ## ⚙️ Конфигурация (.env)
 
-```env
-# Database
-DATABASE_URL=postgresql://postgres:postgres@db:5432/triptogether
+Скопируйте `env.example` в `.env` и заполните значения. **Файл `.env` в .gitignore — в GitHub не попадает.**
 
-# JWT
-JWT_SECRET=your-super-secret-key
-ACCESS_TOKEN_EXPIRE_MINUTES=15
-REFRESH_TOKEN_EXPIRE_DAYS=7
-
-# DeepSeek API (обязательно для генерации маршрутов)
-# Можно использовать OpenAI-совместимый API
-DEEPSEEK_API_KEY=sk-your-key-here
-DEEPSEEK_BASE_URL=https://api.deepseek.com
-DEEPSEEK_MODEL=deepseek-chat
-
-# Лимиты (опционально)
-MAX_GENERATION_COUNT=10
-
-# App
-FRONTEND_URL=http://localhost:3000
+```bash
+cp env.example .env
 ```
+
+Основные переменные см. в `env.example`. В production обязательно задайте свой `JWT_SECRET` (без этого бэкенд не запустится).
+
+## 🔒 Безопасность: API ключи не в репозитории
+
+- Файлы `.env`, `.env.local`, `.env.*.local` добавлены в `.gitignore` — не коммитятся.
+- Секреты и API ключи (DEEPSEEK_API_KEY, YANDEX_API_KEY, JWT_SECRET) храните только в `.env` на своей машине или в секретах CI/CD.
+- В репозитории только `env.example` с пустыми/примерными значениями — без реальных ключей.
+- Если вы случайно закоммитили `.env` в прошлом, см. [GitHub: удаление чувствительных данных](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository).
 
 ## 🎨 UI/UX Особенности
 

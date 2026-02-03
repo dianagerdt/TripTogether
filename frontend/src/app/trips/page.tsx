@@ -5,11 +5,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/AuthContext'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { getTrips, createTrip, joinTrip } from '@/lib/trips'
-import { TripListItem, CreateTripData } from '@/types'
+import { TripListItem, CreateTripData, Trip } from '@/types'
 import { useToast } from '@/components/ui/Toast'
+import { getErrorMessage } from '@/lib/errors'
 import { EmptyState, TripsListSkeleton } from '@/components/ui'
 import { Logo } from '@/components/Logo'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 function CreateTripModal({ 
   isOpen, 
@@ -18,28 +20,46 @@ function CreateTripModal({
 }: { 
   isOpen: boolean
   onClose: () => void
-  onSuccess: () => void 
+  onSuccess: (trip: Trip) => void 
 }) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [error, setError] = useState('')
+  const [dateErrors, setDateErrors] = useState<{ start?: string; end?: string }>({})
   const inputRef = useRef<HTMLInputElement>(null)
   const { showToast } = useToast()
 
-  // Autofocus on open
+  const todayStr = () => new Date().toISOString().slice(0, 10)
+
+  const validateDates = (): boolean => {
+    const err: { start?: string; end?: string } = {}
+    if (startDate && startDate < todayStr()) {
+      err.start = 'Дата начала не может быть в прошлом'
+    }
+    if (startDate && endDate && endDate < startDate) {
+      err.end = 'Дата окончания должна быть не раньше даты начала'
+    }
+    setDateErrors(err)
+    return Object.keys(err).length === 0
+  }
+
   useEffect(() => {
     if (isOpen && inputRef.current) {
       setTimeout(() => inputRef.current?.focus(), 100)
     }
   }, [isOpen])
 
+  useEffect(() => {
+    if (startDate || endDate) setDateErrors({})
+  }, [startDate, endDate])
+
   const mutation = useMutation({
     mutationFn: createTrip,
-    onSuccess: () => {
+    onSuccess: (createdTrip) => {
       showToast('Поездка создана! 🎉', 'success')
-      onSuccess()
+      onSuccess(createdTrip)
       onClose()
       setTitle('')
       setDescription('')
@@ -47,7 +67,7 @@ function CreateTripModal({
       setEndDate('')
     },
     onError: (err: any) => {
-      setError(err.response?.data?.detail || 'Ошибка создания поездки')
+      setError(getErrorMessage(err, 'Ошибка создания поездки'))
     }
   })
 
@@ -56,6 +76,7 @@ function CreateTripModal({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    if (!validateDates()) return
     mutation.mutate({
       title,
       description: description || undefined,
@@ -112,9 +133,17 @@ function CreateTripModal({
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="input"
+                min={todayStr()}
+                className={`input ${dateErrors.start ? 'border-red-500' : ''}`}
                 required
+                aria-invalid={!!dateErrors.start}
+                aria-describedby={dateErrors.start ? 'start-date-error' : undefined}
               />
+              {dateErrors.start && (
+                <p id="start-date-error" className="mt-1 text-sm text-red-600" role="alert">
+                  {dateErrors.start}
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -124,9 +153,17 @@ function CreateTripModal({
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="input"
+                min={startDate || todayStr()}
+                className={`input ${dateErrors.end ? 'border-red-500' : ''}`}
                 required
+                aria-invalid={!!dateErrors.end}
+                aria-describedby={dateErrors.end ? 'end-date-error' : undefined}
               />
+              {dateErrors.end && (
+                <p id="end-date-error" className="mt-1 text-sm text-red-600" role="alert">
+                  {dateErrors.end}
+                </p>
+              )}
             </div>
           </div>
 
@@ -182,7 +219,7 @@ function JoinTripModal({
       setInviteCode('')
     },
     onError: (err: any) => {
-      setError(err.response?.data?.detail || 'Неверный код приглашения')
+      setError(getErrorMessage(err, 'Неверный код приглашения'))
     }
   })
 
@@ -307,6 +344,7 @@ function TripCard({ trip }: { trip: TripListItem }) {
 function TripsContent() {
   const { user, logout } = useAuth()
   const queryClient = useQueryClient()
+  const router = useRouter()
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showJoinModal, setShowJoinModal] = useState(false)
 
@@ -315,7 +353,12 @@ function TripsContent() {
     queryFn: getTrips,
   })
 
-  const handleSuccess = () => {
+  const handleCreateSuccess = (trip: Trip) => {
+    queryClient.invalidateQueries({ queryKey: ['trips'] })
+    router.push(`/trips/${trip.id}`)
+  }
+
+  const handleJoinSuccess = () => {
     queryClient.invalidateQueries({ queryKey: ['trips'] })
   }
 
@@ -401,12 +444,12 @@ function TripsContent() {
       <CreateTripModal 
         isOpen={showCreateModal} 
         onClose={() => setShowCreateModal(false)}
-        onSuccess={handleSuccess}
+        onSuccess={handleCreateSuccess}
       />
       <JoinTripModal
         isOpen={showJoinModal}
         onClose={() => setShowJoinModal(false)}
-        onSuccess={handleSuccess}
+        onSuccess={handleJoinSuccess}
       />
     </div>
   )

@@ -149,3 +149,74 @@ async def generate_routes(trip: Trip, preferences: List[PlacePreference]) -> Lis
         }]
     
     return routes
+
+
+def load_place_suggestions_prompt(country: str, city: str) -> str:
+    """Load place suggestions prompt from file and substitute country/city."""
+    prompt_path = Path(__file__).parent.parent / "prompts" / "place_suggestions.md"
+    with open(prompt_path, "r", encoding="utf-8") as f:
+        template = f.read()
+    return template.replace("{{country}}", country).replace("{{city}}", city)
+
+
+async def suggest_places(country: str, city: str) -> List[dict]:
+    """Suggest popular places for a city. Returns list of {name, place_type}."""
+    if not settings.deepseek_api_key:
+        raise ValueError("DeepSeek API key is not configured")
+    country = (country or "").strip()
+    city = (city or "").strip()
+    if not country or not city:
+        raise ValueError("country and city are required")
+
+    client = OpenAI(
+        api_key=settings.deepseek_api_key,
+        base_url=settings.deepseek_base_url,
+    )
+    user_prompt = load_place_suggestions_prompt(country, city)
+
+    try:
+        response = client.chat.completions.create(
+            model=settings.deepseek_model,
+            messages=[{"role": "user", "content": user_prompt}],
+            temperature=0.5,
+            max_tokens=800,
+        )
+    except Exception as e:
+        error_msg = str(e)
+        if "429" in error_msg or "rate_limit" in error_msg.lower():
+            raise Exception(f"Rate limit: {e}")
+        if "invalid_api_key" in error_msg.lower() or "authentication" in error_msg.lower():
+            raise Exception(f"Invalid API key: {e}")
+        raise Exception(f"API error: {e}")
+
+    content = (response.choices[0].message.content or "").strip()
+    if content.startswith("```"):
+        content = content.split("\n", 1)[-1] if "\n" in content else content[3:]
+    if content.endswith("```"):
+        content = content.rsplit("```", 1)[0].strip()
+    try:
+        raw = json.loads(content)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(raw, list):
+        return []
+    valid_types = {"museum", "park", "viewpoint", "food", "activity", "district", "other"}
+    result = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name") or item.get("title")
+        pt = (item.get("place_type") or "").strip().lower()
+        if not name or pt not in valid_types:
+            continue
+        reason = item.get("reason") or item.get("why")
+        if isinstance(reason, str):
+            reason = reason.strip()[:200]  # limit length
+        else:
+            reason = None
+        result.append({
+            "name": str(name).strip(),
+            "place_type": pt,
+            "reason": reason or None,
+        })
+    return result[:10]

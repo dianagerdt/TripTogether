@@ -1,7 +1,9 @@
-# Environment
+# Environment (никогда не коммитить — здесь API ключи и секреты)
 .env
 .env.local
 .env.*.local
+.env.development
+.env.production
 
 # Python
 __pycache__/

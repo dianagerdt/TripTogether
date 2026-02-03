@@ -7,6 +7,7 @@ from app.routers import preferences
 from app.routers import routes
 from app.routers import votes
 from app.routers import reactions
+from app.routers import suggestions
 
 app = FastAPI(
     title="TripTogether API",
@@ -51,3 +52,6 @@ app.include_router(votes.router, prefix="/api/trips", tags=["Voting"])
 
 # Reactions
 app.include_router(reactions.router, prefix="/api/preferences", tags=["Reactions"])
+
+# AI place suggestions
+app.include_router(suggestions.router, prefix="/api", tags=["Suggestions"])

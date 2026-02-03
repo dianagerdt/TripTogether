@@ -6,6 +6,7 @@ import { useMutation } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/AuthContext'
 import { joinTrip } from '@/lib/trips'
 import { useToast } from '@/components/ui/Toast'
+import { getErrorMessage } from '@/lib/errors'
 import Link from 'next/link'
 
 export default function JoinByLinkPage() {
@@ -24,11 +25,13 @@ export default function JoinByLinkPage() {
     },
     onError: (err: any) => {
       const detail = err.response?.data?.detail
-      if (detail === 'Вы уже являетесь участником этой поездки') {
+      const isAlreadyMember = detail === 'Вы уже являетесь участником этой поездки' ||
+        (typeof detail === 'string' && detail.includes('уже являетесь'))
+      if (isAlreadyMember) {
         showToast('Вы уже участник этой поездки', 'info')
         router.push('/trips')
       } else {
-        showToast(detail || 'Ошибка присоединения', 'error')
+        showToast(getErrorMessage(err, 'Ошибка присоединения'), 'error')
       }
     }
   })
@@ -104,7 +107,7 @@ export default function JoinByLinkPage() {
             Не удалось присоединиться
           </h1>
           <p className="text-gray-500 mb-6">
-            {(joinMutation.error as any)?.response?.data?.detail || 'Проверьте код приглашения или попробуйте позже'}
+            {joinMutation.error ? getErrorMessage(joinMutation.error as any, 'Проверьте код приглашения или попробуйте позже') : 'Проверьте код приглашения или попробуйте позже'}
           </p>
 
           <div className="flex flex-col gap-3">

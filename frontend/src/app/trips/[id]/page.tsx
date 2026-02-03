@@ -8,6 +8,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { getTrip, deleteTrip, leaveTrip } from '@/lib/trips'
 import { getPreferences, createPreference, updatePreference, deletePreference, PLACE_TYPE_LABELS, PLACE_TYPES, getTripReactions, addReaction, removeReaction, AVAILABLE_EMOJIS, PreferenceReactions, ReactionData } from '@/lib/preferences'
+import { getPlaceSuggestions, PlaceSuggestion } from '@/lib/suggestions'
 import { getAllCountries, getCitiesForCountry, searchCities } from '@/lib/cities'
 import { getRoutes, generateRoutes } from '@/lib/routes'
 import api from '@/lib/api'
@@ -184,6 +185,32 @@ function getNextStepHint(
   return null
 }
 
+// Onboarding: steps for the trip planning flow
+type StepStatus = 'done' | 'current' | 'upcoming'
+function getOnboardingSteps(
+  preferencesCount: number,
+  routesCount: number,
+  participantsCount: number,
+  hasVoted: boolean
+): { key: string; label: string; icon: string; status: StepStatus }[] {
+  const steps = [
+    { key: 'invite', label: 'Пригласить', icon: '👥', done: participantsCount > 1 },
+    { key: 'preferences', label: 'Пожелания', icon: '📍', done: preferencesCount >= 1 },
+    { key: 'routes', label: 'Маршруты', icon: '🗺️', done: routesCount > 0 },
+    { key: 'vote', label: 'Голосование', icon: '🗳️', done: hasVoted },
+  ]
+  let foundCurrent = false
+  return steps.map((s) => {
+    let status: StepStatus = 'upcoming'
+    if (s.done) status = 'done'
+    else if (!foundCurrent) {
+      status = 'current'
+      foundCurrent = true
+    }
+    return { ...s, status }
+  })
+}
+
 function AddPreferenceModal({
   isOpen,
   onClose,
@@ -230,6 +257,9 @@ function AddPreferenceModal({
   const [error, setError] = useState('')
   const [showCountrySuggestions, setShowCountrySuggestions] = useState(false)
   const [showCitySuggestions, setShowCitySuggestions] = useState(false)
+  const [suggestions, setSuggestions] = useState<PlaceSuggestion[] | null>(null)
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false)
+  const [suggestionsError, setSuggestionsError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const cityInputRef = useRef<HTMLInputElement>(null)
   const { showToast } = useToast()
@@ -238,12 +268,14 @@ function AddPreferenceModal({
   const citySuggestions = city && country ? getCitiesForCountry(country).filter(c => c.toLowerCase().includes(city.toLowerCase())).slice(0, 8) : 
                          city ? searchCities(city).slice(0, 8) : []
 
-  // Load saved location when modal opens
+  // Load saved location when modal opens; reset AI suggestions
   useEffect(() => {
     if (isOpen) {
       const saved = loadSavedLocation()
       setCountry(saved.country)
       setCity(saved.city)
+      setSuggestions(null)
+      setSuggestionsError(null)
       if (inputRef.current) {
         setTimeout(() => inputRef.current?.focus(), 100)
       }
@@ -253,13 +285,33 @@ function AddPreferenceModal({
   // Reset city when country changes
   useEffect(() => {
     if (country) {
-      // Only reset city if it doesn't match the new country
       const citiesForCountry = getCitiesForCountry(country)
       if (city && !citiesForCountry.includes(city)) {
         setCity('')
       }
     }
   }, [country])
+
+  const fetchSuggestions = () => {
+    if (!country.trim() || !city.trim()) return
+    setSuggestionsError(null)
+    setSuggestions(null)
+    setSuggestionsLoading(true)
+    getPlaceSuggestions(country, city)
+      .then((list) => setSuggestions(list))
+      .catch((err: any) => {
+        setSuggestionsError(getErrorMessage(err, 'Не удалось загрузить подсказки'))
+        setSuggestions([])
+      })
+      .finally(() => setSuggestionsLoading(false))
+  }
+
+  const applySuggestion = (s: PlaceSuggestion) => {
+    setLocation(s.name)
+    setPlaceType(s.place_type as PlaceType)
+    if (s.reason) setComment(s.reason)
+    setSuggestions(null)
+  }
 
   const mutation = useMutation({
     mutationFn: (data: CreatePreferenceData) => createPreference(tripId, data),
@@ -350,6 +402,46 @@ function AddPreferenceModal({
               )}
             </div>
           </div>
+          {country.trim() && city.trim() && (
+            <div>
+              <button
+                type="button"
+                onClick={fetchSuggestions}
+                disabled={suggestionsLoading}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-primary-50 border-2 border-primary-200 text-primary-800 font-medium text-sm hover:bg-primary-100 hover:border-primary-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+                title="Подсказать места"
+              >
+                <span className="text-xl" aria-hidden>★</span>
+                <span>{suggestionsLoading ? 'Загрузка...' : 'Подсказать места'}</span>
+              </button>
+              {suggestionsError && (
+                <p className="mt-1 text-sm text-red-600" role="alert">{suggestionsError}</p>
+              )}
+              {suggestions && suggestions.length > 0 && (
+                <div className="mt-2 p-3 bg-gray-50 rounded-lg border border-gray-100">
+                  <p className="text-xs text-gray-500 mb-2">Выберите место — подставятся название и тип</p>
+                  <div className="flex flex-wrap gap-2">
+                    {suggestions.map((s) => (
+                      <button
+                        key={`${s.name}-${s.place_type}-${s.reason || ''}`}
+                        type="button"
+                        onClick={() => applySuggestion(s)}
+                        className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-left hover:border-primary-300 hover:bg-primary-50 transition-colors"
+                      >
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium text-sm">{s.name}</span>
+                          <span className="text-xs text-gray-500">{PLACE_TYPE_LABELS[s.place_type] || s.place_type}</span>
+                        </div>
+                        {s.reason && (
+                          <p className="mt-1 text-xs text-gray-500 line-clamp-2 leading-snug">{s.reason}</p>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Место (опционально)</label>
             <input type="text" value={location} onChange={(e: ChangeEvent<HTMLInputElement>) => setLocation(e.target.value)} className="input" placeholder="Колизей" />
@@ -771,6 +863,10 @@ function TripDetailContent() {
   const [filterType, setFilterType] = useState<PlaceType | 'all'>('all')
   const [filterAuthor, setFilterAuthor] = useState<string>('all')
   const [sortBy, setSortBy] = useState<'priority' | 'date' | 'author'>('priority')
+  const [welcomeDismissed, setWelcomeDismissed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    return localStorage.getItem(`trip_${tripId}_onboarding_welcome`) === '1'
+  })
 
   const { data: trip, isLoading } = useQuery<Trip>({ queryKey: ['trip', tripId], queryFn: () => getTrip(tripId) })
   const { data: preferences } = useQuery<Preference[]>({ queryKey: ['preferences', tripId], queryFn: () => getPreferences(tripId) })
@@ -925,8 +1021,23 @@ function TripDetailContent() {
     if (action === 'invite') setShowShareMenu(true)
     else if (action === 'add_preference') setShowAddPref(true)
     else if (action === 'generate') generateMutation.mutate(undefined)
-    else if (action === 'vote') setActiveTab('routes')
+    else if (action === 'vote') setActiveTab('voting')
   }
+
+  const dismissWelcome = () => {
+    setWelcomeDismissed(true)
+    try {
+      localStorage.setItem(`trip_${tripId}_onboarding_welcome`, '1')
+    } catch (_) {}
+  }
+
+  const onboardingSteps = getOnboardingSteps(
+    preferences?.length || 0,
+    routes?.length || 0,
+    trip.participants?.length || 0,
+    (myVotes?.length || 0) > 0
+  )
+  const showWelcomeCard = !welcomeDismissed && (preferences?.length ?? 0) === 0 && (trip.participants?.length ?? 0) <= 1
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -997,6 +1108,34 @@ function TripDetailContent() {
         </div>
       </div>
 
+      {/* Onboarding: steps strip */}
+      <div className="bg-gray-50 border-b border-gray-100">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Как спланировать поездку</p>
+          <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+            {onboardingSteps.map((step, i) => (
+              <React.Fragment key={step.key}>
+                <div
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                    step.status === 'done'
+                      ? 'bg-green-100 text-green-800'
+                      : step.status === 'current'
+                        ? 'bg-primary-100 text-primary-800 ring-1 ring-primary-200'
+                        : 'bg-gray-100 text-gray-500'
+                  }`}
+                >
+                  <span>{step.status === 'done' ? '✓' : step.icon}</span>
+                  <span>{step.label}</span>
+                </div>
+                {i < onboardingSteps.length - 1 && (
+                  <span className="text-gray-300 hidden sm:inline">→</span>
+                )}
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
+      </div>
+
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex gap-8">
@@ -1014,6 +1153,33 @@ function TripDetailContent() {
       </div>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Welcome card for new trips (onboarding) */}
+        {showWelcomeCard && (
+          <div className="mb-6 p-5 bg-white border border-primary-200 rounded-xl shadow-sm animate-fade-in-up relative">
+            <button
+              onClick={dismissWelcome}
+              className="absolute top-3 right-3 w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+              aria-label="Закрыть"
+            >
+              ×
+            </button>
+            <div className="pr-8">
+              <h3 className="text-lg font-semibold text-gray-900 mb-1">Добро пожаловать в поездку! 🎒</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Спланируйте маршрут в четыре шага: пригласите друзей, добавьте пожелания по местам, сгенерируйте варианты маршрута и выберите лучший голосованием.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => setShowShareMenu(true)} className="btn-secondary text-sm">
+                  🔗 Пригласить
+                </button>
+                <button onClick={() => setShowAddPref(true)} className="btn-primary text-sm">
+                  + Добавить пожелание
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* "What's next?" hint */}
         {nextHint && (
           <div 
